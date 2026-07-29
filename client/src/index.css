@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+/* Dark mode is toggled by adding/removing the "dark" class on <html>,
+   controlled by the theme slice + a small script in main.jsx. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
