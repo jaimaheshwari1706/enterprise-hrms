@@ -7,8 +7,8 @@ export const profileApi = {
   uploadAvatar: (file) => {
     const formData = new FormData();
     formData.append('avatar', file);
-    return api.post('/profile/me/avatar', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    // Leave Content-Type unset so axios/XHR can generate the multipart
+    // boundary itself — see the comment in employeeApi.uploadProfileImage.
+    return api.post('/profile/me/avatar', formData);
   },
 };

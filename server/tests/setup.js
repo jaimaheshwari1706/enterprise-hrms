@@ -4,7 +4,10 @@ const mongoose = require('mongoose');
 let mongoServer;
 
 async function connectTestDB() {
-  mongoServer = await MongoMemoryServer.create();
+  // Explicit launchTimeout gives the in-memory mongod more headroom than the
+  // library default (10s) when several suites are starting instances close
+  // together — the default was intermittently too tight on this machine.
+  mongoServer = await MongoMemoryServer.create({ instance: { launchTimeout: 30000 } });
   await mongoose.connect(mongoServer.getUri());
 }
 

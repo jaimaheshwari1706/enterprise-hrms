@@ -11,7 +11,7 @@ import { useToast } from '../../components/ToastProvider';
 import Avatar from '../../components/Avatar';
 import StatusBadge from '../../components/StatusBadge';
 import Button from '../../components/Button';
-import { Loading, ErrorState } from '../../components/StateViews';
+import { Loading, ErrorState, EmptyState } from '../../components/StateViews';
 
 const TABS = ['Overview', 'Personal', 'Job', 'Attendance', 'Leave', 'Payroll'];
 
@@ -25,14 +25,6 @@ function InfoRow({ label, value }) {
     <div className="flex justify-between border-b border-slate-100 py-2.5 text-sm last:border-0 dark:border-slate-800">
       <span className="text-slate-500 dark:text-slate-400">{label}</span>
       <span className="font-medium text-slate-800 dark:text-slate-100">{value || '—'}</span>
-    </div>
-  );
-}
-
-function ComingSoon({ phase }) {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-      This tab will be built in {phase}.
     </div>
   );
 }

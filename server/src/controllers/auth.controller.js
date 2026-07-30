@@ -94,9 +94,21 @@ const refreshTokenHandler = asyncHandler(async (req, res) => {
   }
 
   const tokenHash = hashToken(token);
-  const stored = await RefreshToken.findOne({ tokenHash, user: payload.sub });
 
-  if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+  // Rotate atomically: only one caller can ever successfully revoke a given
+  // token. Using findOne + save() here would race two concurrent requests
+  // presenting the same refresh token (e.g. two tabs, or a double-fired
+  // client effect) — both could read "not revoked" before either write
+  // landed, letting both rotate the same token. findOneAndUpdate performs
+  // the check-and-set as a single atomic operation at the DB level, so a
+  // second concurrent caller simply finds no matching (still-unrevoked)
+  // document and fails cleanly with 401 instead of a race.
+  const stored = await RefreshToken.findOneAndUpdate(
+    { tokenHash, user: payload.sub, revokedAt: null, expiresAt: { $gt: new Date() } },
+    { revokedAt: new Date() }
+  );
+
+  if (!stored) {
     throw new ApiError(401, 'Refresh token is no longer valid, please log in again');
   }
 
@@ -104,11 +116,6 @@ const refreshTokenHandler = asyncHandler(async (req, res) => {
   if (!user || !user.isActive) {
     throw new ApiError(401, 'Account not found or deactivated');
   }
-
-  // Rotate: revoke the used refresh token and issue a brand new pair. This
-  // limits the damage if a refresh token is ever stolen — it only works once.
-  stored.revokedAt = new Date();
-  await stored.save();
 
   const accessToken = await issueTokens(res, user, req);
 

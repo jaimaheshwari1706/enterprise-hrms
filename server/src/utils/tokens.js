@@ -15,10 +15,14 @@ function generateAccessToken(user) {
 
 // The refresh token is long-lived and stored (hashed) in MongoDB so it can
 // be revoked (logout, password reset) — a plain JWT alone can't be revoked
-// before it expires.
+// before it expires. `jti` is a random nonce: JWT `iat` only has
+// second-granularity, so two tokens minted for the same user inside the same
+// second would otherwise be byte-identical (same payload + same iat) and
+// collide on the unique `tokenHash` index — this happens in practice when
+// two refresh requests race (e.g. two browser tabs, or a retried request).
 function generateRefreshToken(user) {
   return jwt.sign(
-    { sub: user._id.toString() },
+    { sub: user._id.toString(), jti: crypto.randomBytes(16).toString('hex') },
     env.jwt.refreshSecret,
     { expiresIn: env.jwt.refreshExpiry }
   );

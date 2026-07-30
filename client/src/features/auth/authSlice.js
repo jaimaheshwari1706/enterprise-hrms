@@ -13,14 +13,27 @@ const initialState = {
 // httpOnly refresh-token cookie for a new access token; if that succeeds
 // we're still logged in, otherwise we're not. This is what lets a user
 // refresh the browser without being kicked back to /login.
-export const bootstrapAuth = createAsyncThunk('auth/bootstrap', async (_, { rejectWithValue }) => {
-  try {
-    const { data } = await authApi.refreshToken();
-    return data.data; // { accessToken, user }
-  } catch (err) {
-    return rejectWithValue(err.response?.data?.message || 'Not authenticated');
+export const bootstrapAuth = createAsyncThunk(
+  'auth/bootstrap',
+  async (_, { rejectWithValue }) => {
+    try {
+      const { data } = await authApi.refreshToken();
+      return data.data; // { accessToken, user }
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || 'Not authenticated');
+    }
+  },
+  {
+    // Guards against duplicate concurrent bootstrap calls (React StrictMode
+    // double-invokes effects in dev, firing this twice on every mount). The
+    // refresh token is single-use/rotated server-side, so two concurrent
+    // calls would race — one succeeds, one gets a stale-token 401 — and
+    // whichever settles last wins the final auth state, sometimes wiping out
+    // an otherwise-valid session. Bailing out here means only the first call
+    // in flight ever reaches the network.
+    condition: (_, { getState }) => getState().auth.status === 'idle',
   }
-});
+);
 
 export const loginUser = createAsyncThunk('auth/login', async (credentials, { rejectWithValue }) => {
   try {

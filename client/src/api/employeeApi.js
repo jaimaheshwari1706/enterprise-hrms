@@ -10,8 +10,11 @@ export const employeeApi = {
   uploadProfileImage: (id, file) => {
     const formData = new FormData();
     formData.append('profileImage', file);
-    return api.post(`/employees/${id}/profile-image`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    // No explicit Content-Type here: axios's default (XHR) adapter only
+    // generates the multipart boundary itself when the header is left
+    // unset. Setting 'multipart/form-data' manually (without a boundary)
+    // sends a malformed body that the server's multer/busboy parser can't
+    // read, so the upload silently fails with "no file uploaded".
+    return api.post(`/employees/${id}/profile-image`, formData);
   },
 };

@@ -6,8 +6,8 @@ export const organizationApi = {
   uploadLogo: (file) => {
     const formData = new FormData();
     formData.append('logo', file);
-    return api.post('/organization/logo', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    // Leave Content-Type unset so axios/XHR can generate the multipart
+    // boundary itself — see the comment in employeeApi.uploadProfileImage.
+    return api.post('/organization/logo', formData);
   },
 };
