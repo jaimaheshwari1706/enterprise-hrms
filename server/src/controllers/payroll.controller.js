@@ -1,4 +1,5 @@
 const { Salary, Payroll, Employee, User } = require('../models');
+const { calculateGrossSalary, calculateNetSalary } = require('../utils/payrollCalculations');
 const getRedisClient = require('../config/redis');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
@@ -83,8 +84,8 @@ const generatePayroll = asyncHandler(async (req, res) => {
       continue;
     }
 
-    const grossSalary = salary.basic + salary.hra + salary.allowances;
-    const netSalary = grossSalary - salary.deductions;
+    const grossSalary = calculateGrossSalary(salary);
+    const netSalary = calculateNetSalary(salary);
 
     const payroll = await Payroll.create({
       employee: employee._id,

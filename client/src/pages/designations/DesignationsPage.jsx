@@ -163,7 +163,7 @@ export default function DesignationsPage() {
 
         {status === 'ready' && designations.length > 0 && (
           <>
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
@@ -211,7 +211,7 @@ export default function DesignationsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             <Pagination pagination={pagination} onPageChange={setPage} />
           </>
         )}

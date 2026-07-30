@@ -178,7 +178,7 @@ function PayrollRecordsTab({ employees, showToast }) {
         )}
         {status === 'ready' && records.length > 0 && (
           <>
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <tr>
                   <th className="px-4 py-3 font-medium">Employee</th>
@@ -210,7 +210,7 @@ function PayrollRecordsTab({ employees, showToast }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             <Pagination pagination={pagination} onPageChange={setPage} />
           </>
         )}
@@ -260,7 +260,7 @@ function SalaryConfigTab({ employees, showToast }) {
       {employees.length === 0 ? (
         <EmptyState title="No active employees" message="Add employees first to configure their salaries." />
       ) : (
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <tr>
               <th className="px-4 py-3 font-medium">Employee</th>
@@ -290,7 +290,7 @@ function SalaryConfigTab({ employees, showToast }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       <SalaryConfigModal

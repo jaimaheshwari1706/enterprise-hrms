@@ -227,7 +227,7 @@ export default function EmployeeDetailPage() {
             <EmptyState title="No attendance records yet" message="Records will appear here once check-ins begin." />
           )}
           {attendanceRecords?.length > 0 && (
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <tr>
                   <th className="px-4 py-3 font-medium">Date</th>
@@ -244,7 +244,7 @@ export default function EmployeeDetailPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
@@ -256,7 +256,7 @@ export default function EmployeeDetailPage() {
             <EmptyState title="No leave requests yet" message="Leave requests will appear here once submitted." />
           )}
           {leaveRecords?.length > 0 && (
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
                 <tr>
                   <th className="px-4 py-3 font-medium">Type</th>
@@ -277,7 +277,7 @@ export default function EmployeeDetailPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
@@ -298,7 +298,7 @@ export default function EmployeeDetailPage() {
                 <EmptyState title="No payroll records yet" message="Payroll history will appear here once generated." />
               )}
               {payrollRecords?.length > 0 && (
-                <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto"><table className="w-full text-left text-sm">
                   <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
                     <tr>
                       <th className="px-4 py-3 font-medium">Month</th>
@@ -315,7 +315,7 @@ export default function EmployeeDetailPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               )}
             </div>
           </div>

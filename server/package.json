@@ -10,6 +10,8 @@
     "seed": "node src/seed/seed.js",
     "seed:admin": "node src/seed/createSuperAdmin.js",
     "seed:leave-types": "node src/seed/createLeaveTypes.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -33,6 +35,9 @@
   },
   "devDependencies": {
     "eslint": "^8.57.1",
-    "nodemon": "^3.1.7"
+    "jest": "^30.4.2",
+    "mongodb-memory-server": "^11.2.0",
+    "nodemon": "^3.1.7",
+    "supertest": "^7.2.2"
   }
 }

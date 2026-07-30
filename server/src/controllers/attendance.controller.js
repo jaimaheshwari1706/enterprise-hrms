@@ -1,16 +1,11 @@
 const { Attendance } = require('../models');
 const { startOfDay, endOfDay } = require('../utils/dateHelpers');
+const { calculateWorkingHours, deriveAttendanceStatus } = require('../utils/attendanceCalculations');
 const getRedisClient = require('../config/redis');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
 const { getPagination, buildPaginationMeta } = require('../utils/pagination');
 const ApiError = require('../utils/ApiError');
-
-// A full day is 8 working hours; anything less (but still checked in/out)
-// counts as a half day. This is intentionally simple — no shift rules, no
-// overtime, no break deductions — per the "simplified attendance/payroll"
-// scope of this project.
-const FULL_DAY_HOURS = 8;
 
 function requireEmployeeProfile(req) {
   if (!req.user.employee) {
@@ -62,11 +57,11 @@ const checkOut = asyncHandler(async (req, res) => {
   }
 
   const checkOutTime = new Date();
-  const hoursWorked = (checkOutTime - attendance.checkIn) / (1000 * 60 * 60);
+  const hoursWorked = calculateWorkingHours(attendance.checkIn, checkOutTime);
 
   attendance.checkOut = checkOutTime;
-  attendance.workingHours = Math.round(hoursWorked * 100) / 100;
-  attendance.status = hoursWorked >= FULL_DAY_HOURS ? 'Present' : 'HalfDay';
+  attendance.workingHours = hoursWorked;
+  attendance.status = deriveAttendanceStatus(hoursWorked);
   await attendance.save();
 
   await getRedisClient().del('dashboard:hr');

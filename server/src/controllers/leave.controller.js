@@ -1,5 +1,6 @@
 const { LeaveType, LeaveRequest, Approval, Employee, User, Attendance } = require('../models');
 const { startOfDay } = require('../utils/dateHelpers');
+const { calculateLeaveDays } = require('../utils/leaveCalculations');
 const getRedisClient = require('../config/redis');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
@@ -14,13 +15,6 @@ function requireEmployeeProfile(req) {
     throw new ApiError(403, 'No employee profile is linked to this account');
   }
   return req.user.employee;
-}
-
-// Inclusive day count between two dates — deliberately simple (no weekend
-// or holiday exclusion), matching the "simplified leave management" scope.
-function calculateLeaveDays(startDate, endDate) {
-  const diffMs = startOfDay(endDate) - startOfDay(startDate);
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 }
 
 // Finds everyone who should be notified/emailed about a pending request:
