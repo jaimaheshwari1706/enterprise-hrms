@@ -2,6 +2,13 @@
   "name": "enterprise-hrms-server",
   "version": "1.0.0",
   "description": "Enterprise HRMS - Express + MongoDB backend",
+  "author": "Jai Maheshwari",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jaimaheshwari1706/enterprise-hrms.git",
+    "directory": "server"
+  },
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -39,5 +46,10 @@
     "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.7",
     "supertest": "^7.2.2"
+  },
+  "allowScripts": {
+    "bcrypt@5.1.1": true,
+    "mongodb-memory-server@11.2.0": true,
+    "unrs-resolver@1.12.2": true
   }
 }
