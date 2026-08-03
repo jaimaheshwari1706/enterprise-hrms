@@ -1,0 +1,19 @@
+{
+  "name": "enterprise-hrms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Enterprise HRMS — React/Vite client + Express/Mongoose server. Root scripts are convenience wrappers only; client/ and server/ remain independent npm projects with their own lockfiles.",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "lint": "npm run lint --prefix server && npm run lint --prefix client",
+    "test": "npm test --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

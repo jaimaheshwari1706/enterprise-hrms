@@ -183,6 +183,18 @@ bugs found and fixed, root-caused),
 `mongod` or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster).
 Optional: Redis, Cloudinary account, SMTP credentials.
 
+Quickest path from a fresh clone (root `package.json` just wraps the two
+independent projects below — `client/` and `server/` still have their own
+lockfiles and can be run standalone exactly as before):
+
+```bash
+npm run install:all   # installs server/ and client/ separately
+cp server/.env.example server/.env   # edit MONGO_URI etc.
+cp client/.env.example client/.env
+cd server && npm run seed && cd ..   # populates demo data, see below
+npm run dev            # runs API (5000) + Vite dev server (5173) together
+```
+
 ### Backend
 
 ```bash
@@ -243,18 +255,95 @@ inline env vars. The client's `VITE_API_BASE_URL` is baked in at build
 time — rebuild with `--build-arg VITE_API_BASE_URL=...` if the API isn't at
 `localhost:5000`.
 
-### Before deploying this anywhere real
+## Deployment (Vercel + Render + MongoDB Atlas)
 
-The defaults here are tuned for **local development only**:
+```
+GitHub → Vercel (Root Directory: client/)  → static Vite build, SPA rewrite
+GitHub → Render (Root Directory: server/)  → Express, long-running Node process
+                                            → MongoDB Atlas / Redis / Cloudinary / SMTP
+```
+
+The backend stays a normal Express server (`app.listen`, persistent Mongo
+connection, cookie-based sessions) — it is **not** converted to Vercel
+serverless functions, since that would require rewriting the auth/cookie
+model and connection handling for a stateless-per-invocation runtime. Render
+(or Railway) runs it as-is, using the same `server/Dockerfile` this repo
+already ships for Docker Compose.
+
+### 1. MongoDB Atlas
+
+Create a free cluster → Database Access (add a user) → Network Access
+(allow Render's outbound IPs, or `0.0.0.0/0` if you're fine trusting
+username/password alone) → copy the connection string into `MONGO_URI`.
+
+### 2. Backend → Render
+
+Either use the included `render.yaml` (New → Blueprint, point at this repo)
+or configure manually: New → Web Service → Root Directory `server` → Build
+Command `npm ci` → Start Command `npm start` → Health Check Path `/api/ready`.
+Set every env var from `server/.env.example` in the Render dashboard —
+**`NODE_ENV=production`** matters beyond logging: it's what makes the
+refresh-token cookie use `secure`/`sameSite: 'none'` correctly (see
+`server/src/utils/cookies.js`) and what enables `trust proxy` for Render's
+reverse proxy. Leave `REDIS_ENABLED`/`EMAIL_ENABLED` at `false` if you don't
+need caching or real emails yet — both degrade gracefully.
+
+### 3. Frontend → Vercel
+
+Import the repo → Project Settings → **Root Directory: `client`** (this is
+the step that fixes a bare "404: NOT_FOUND" on the whole site — without it,
+Vercel has no root `package.json` to build from). Framework preset should
+auto-detect as Vite. Set the environment variable:
+
+```
+VITE_API_BASE_URL=https://<your-render-service>.onrender.com/api
+```
+
+`client/vercel.json` already ships an SPA rewrite
+(`{"source":"/(.*)","destination":"/index.html"}`) so refreshing on
+`/dashboard`, `/employees`, `/attendance`, etc. serves `index.html` and lets
+React Router take over, instead of 404ing.
+
+### 4. Connect the two
+
+Set `CORS_ORIGINS` on Render to your Vercel URL(s), comma-separated if you
+need both the production domain and a preview deployment
+(e.g. `https://hrms.vercel.app,https://hrms-git-main-you.vercel.app`).
+Redeploy the backend after changing it — it's read once at process start.
+
+### 5. Optional integrations
+
+- **Redis** — Render Key Value, or Upstash's free tier → `REDIS_URL`,
+  `REDIS_ENABLED=true`.
+- **Cloudinary** — free account → `CLOUDINARY_CLOUD_NAME`/`API_KEY`/
+  `API_SECRET`.
+- **SMTP** — a Gmail App Password or any transactional-email provider →
+  `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS`, `EMAIL_ENABLED=true`.
+
+### Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `404: NOT_FOUND` on every route on Vercel | Root Directory isn't set to `client` — Vercel has nothing to build at the repo root. |
+| `404` only on deep routes (`/dashboard`) but `/` works | `client/vercel.json`'s SPA rewrite is missing or wasn't deployed — every non-root path needs to fall back to `index.html`. |
+| Login/refresh always `401` in production, credentials are correct | `CORS_ORIGINS` on Render doesn't contain the exact Vercel origin (no trailing slash), or `NODE_ENV` isn't `production` on Render — check both before assuming a code bug. |
+| CORS error in the browser console | Same as above — the request origin must be an exact string match in `CORS_ORIGINS`. |
+| Login works but a page refresh always logs you out | This was BUG-001 (see above) — already fixed; if it recurs, check the refresh-token cookie is actually being set (`Set-Cookie` in the login response) and that `secure`/`sameSite` match your protocol. |
+| `500`/crash on `/api/auth/login` specifically on Render | `trust proxy` not applied — `express-rate-limit@7` throws on Render's `X-Forwarded-For` header without it (already fixed in `server/src/config/env.js`/`app.js`; relevant if you fork and remove that line). |
+
+### Before deploying this anywhere real (checklist)
+
 1. **Rotate both JWT secrets** — the placeholders in this public repo can
    forge a token for any user, including `SUPER_ADMIN`, if left in place.
+   Production now refuses to boot without them set (`config/env.js`).
 2. **Serve over HTTPS** — in production the refresh-token cookie requires
-   `secure: true`, so plain HTTP silently breaks session persistence.
-3. **Set `CLIENT_URL` to the exact production origin** — CORS here allows
-   exactly one configured origin, no wildcard.
+   `secure: true`, so plain HTTP silently breaks session persistence. Both
+   Vercel and Render provide this by default.
+3. **Set `CORS_ORIGINS` to the exact production origin(s)** — no wildcard,
+   ever, alongside `credentials: true`.
 4. **Never expose MongoDB/Redis directly** — the shipped compose file maps
    both ports straight to the host with no auth; fine on a laptop, not on a
-   public VM.
+   public VM. Atlas/Render-hosted Redis handle this for you.
 5. **Never seed a real environment**, and rotate/delete the demo accounts
    above before onboarding real users.
 
@@ -262,13 +351,17 @@ The defaults here are tuned for **local development only**:
 
 ```
 enterprise-hrms/
-├── client/                    React + Vite frontend
+├── client/                    React + Vite frontend (own package.json/lockfile)
 │   └── src/{api,app,components,features,layouts,pages,routes}/
-├── server/                    Express backend
+│   └── vercel.json             SPA rewrite for React Router on Vercel
+├── server/                    Express backend (own package.json/lockfile)
 │   └── src/{config,controllers,middleware,models,routes,services,seed,utils,validations}/
 │   └── tests/{unit,integration}/
+├── package.json                root convenience scripts only — not a workspace
+├── render.yaml                  Render Blueprint for the backend
 ├── docker-compose.yml
 ├── BUGS.md, *_TEST_REPORT.md      internal QA records (see Testing above)
+├── DEPLOYMENT_AUDIT.md, SECURITY_REPORT.md, PRODUCTION_DEPLOYMENT_REPORT.md
 └── README.md
 ```
 
