@@ -2,6 +2,7 @@
 
 A portfolio-grade Enterprise HR Management System (MERN) with server-enforced RBAC and a documented production-grade concurrency bug fix.
 
+[![CI](https://github.com/jaimaheshwari1706/enterprise-hrms/actions/workflows/ci.yml/badge.svg)](https://github.com/jaimaheshwari1706/enterprise-hrms/actions/workflows/ci.yml)
 ![License: Unlicensed](https://img.shields.io/badge/license-unlicensed-lightgrey)
 
 ## Overview
