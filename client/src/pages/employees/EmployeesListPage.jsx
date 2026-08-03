@@ -6,7 +6,7 @@ import { employeeApi } from '../../api/employeeApi';
 import { departmentApi } from '../../api/departmentApi';
 import { exportApi } from '../../api/exportApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import useDebounce from '../../hooks/useDebounce';
 import Button from '../../components/Button';
 import Avatar from '../../components/Avatar';

@@ -91,7 +91,7 @@ describe('Leave application + approval workflow', () => {
 
   it('blocks a random employee (not the manager, not HR) from approving', async () => {
     const passwordHash = await hashPassword('Admin@123');
-    const outsider = await User.create({ email: 'outsider@test.com', passwordHash, role: 'EMPLOYEE' });
+    await User.create({ email: 'outsider@test.com', passwordHash, role: 'EMPLOYEE' });
 
     const applyRes = await request(app)
       .post('/api/leaves/apply')

@@ -4,7 +4,7 @@ import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { designationApi } from '../../api/designationApi';
 import { departmentApi } from '../../api/departmentApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import useDebounce from '../../hooks/useDebounce';
 import Button from '../../components/Button';
 import Pagination from '../../components/Pagination';

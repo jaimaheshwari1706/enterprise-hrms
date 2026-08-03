@@ -7,7 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { employeeApi } from '../../api/employeeApi';
 import { departmentApi } from '../../api/departmentApi';
 import { designationApi } from '../../api/designationApi';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Button from '../../components/Button';
 import { Loading } from '../../components/StateViews';
 

@@ -9,7 +9,7 @@ import Avatar from '../../components/Avatar';
 import StatusBadge from '../../components/StatusBadge';
 import Pagination from '../../components/Pagination';
 import Button from '../../components/Button';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
 
 function formatTime(value) {

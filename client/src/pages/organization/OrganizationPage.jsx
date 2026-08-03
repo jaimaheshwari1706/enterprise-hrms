@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Upload } from 'lucide-react';
 import { organizationApi } from '../../api/organizationApi';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Button from '../../components/Button';
 import { Loading } from '../../components/StateViews';
 

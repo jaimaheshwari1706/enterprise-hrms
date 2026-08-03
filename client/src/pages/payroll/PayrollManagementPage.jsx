@@ -3,7 +3,7 @@ import { Plus, Settings, Download } from 'lucide-react';
 import { payrollApi } from '../../api/payrollApi';
 import { employeeApi } from '../../api/employeeApi';
 import { exportApi } from '../../api/exportApi';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Button from '../../components/Button';
 import Avatar from '../../components/Avatar';
 import StatusBadge from '../../components/StatusBadge';

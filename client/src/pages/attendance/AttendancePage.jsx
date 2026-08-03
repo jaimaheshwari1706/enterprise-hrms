@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { LogIn, LogOut, Clock } from 'lucide-react';
 import { attendanceApi } from '../../api/attendanceApi';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Button from '../../components/Button';
 import Pagination from '../../components/Pagination';
 import StatusBadge from '../../components/StatusBadge';

@@ -6,7 +6,7 @@ import { useSelector } from 'react-redux';
 import { Upload } from 'lucide-react';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 import { profileApi } from '../../api/profileApi';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Avatar from '../../components/Avatar';
 import Button from '../../components/Button';
 import { Loading } from '../../components/StateViews';

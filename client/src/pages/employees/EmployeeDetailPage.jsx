@@ -7,7 +7,7 @@ import { payrollApi } from '../../api/payrollApi';
 import { attendanceApi } from '../../api/attendanceApi';
 import { leaveApi } from '../../api/leaveApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Avatar from '../../components/Avatar';
 import StatusBadge from '../../components/StatusBadge';
 import Button from '../../components/Button';

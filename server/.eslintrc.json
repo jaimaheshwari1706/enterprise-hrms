@@ -11,6 +11,6 @@
     "sourceType": "script"
   },
   "rules": {
-    "no-unused-vars": ["warn", { "args": "none" }]
+    "no-unused-vars": ["warn", { "args": "none", "ignoreRestSiblings": true }]
   }
 }

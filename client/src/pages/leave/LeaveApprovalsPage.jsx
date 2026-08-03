@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import { leaveApi } from '../../api/leaveApi';
 import { exportApi } from '../../api/exportApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Avatar from '../../components/Avatar';
 import StatusBadge from '../../components/StatusBadge';
 import Pagination from '../../components/Pagination';

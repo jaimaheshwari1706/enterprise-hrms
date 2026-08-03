@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, XCircle } from 'lucide-react';
 import { leaveApi } from '../../api/leaveApi';
-import { useToast } from '../../components/ToastProvider';
+import { useToast } from '../../hooks/useToast';
 import Button from '../../components/Button';
 import Pagination from '../../components/Pagination';
 import StatusBadge from '../../components/StatusBadge';
