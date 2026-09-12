@@ -1,5 +1,6 @@
 const { User } = require('../models');
 const { hashPassword, comparePassword } = require('../utils/password');
+const { revokeAllSessions, issueSession } = require('../services/sessionService');
 const { uploadBufferToCloudinary } = require('../middleware/upload');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok } = require('../utils/apiResponse');
@@ -28,7 +29,7 @@ const updateMyProfile = asyncHandler(async (req, res) => {
 
   const employee = req.user.employee;
   if (req.body.phone !== undefined) employee.phone = req.body.phone;
-  if (req.body.dob) employee.dob = req.body.dob;
+  if (req.body.dob !== undefined) employee.dob = req.body.dob || null;
   if (req.body.address) employee.address = { ...employee.address, ...req.body.address };
   await employee.save();
 
@@ -57,6 +58,13 @@ const changeMyPassword = asyncHandler(async (req, res) => {
   user.passwordHash = await hashPassword(newPassword);
   await user.save();
 
+  // Changing the password ends every other session — refresh tokens are
+  // revoked and access tokens issued before now stop working. This
+  // browser gets a brand-new session so the user isn't logged out of the
+  // device they made the change on.
+  await revokeAllSessions(req.user, { reason: 'password' });
+  const { accessToken } = await issueSession(res, req.user, req);
+
   await logAction({
     user: req.user,
     action: 'CHANGE_PASSWORD',
@@ -66,7 +74,7 @@ const changeMyPassword = asyncHandler(async (req, res) => {
     ip: req.ip,
   });
 
-  return ok(res, { message: 'Password changed successfully' });
+  return ok(res, { message: 'Password changed successfully', data: { accessToken } });
 });
 
 // POST /api/profile/me/avatar

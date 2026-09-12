@@ -7,6 +7,9 @@ const initialState = {
   accessToken: null,
   status: 'idle',
   error: null,
+  // Set when the session ended without the user asking for it (refresh
+  // token expired/revoked) so the login page can explain what happened.
+  sessionExpired: false,
 };
 
 // Called on every full page load/refresh. Tries to silently exchange the
@@ -40,7 +43,7 @@ export const loginUser = createAsyncThunk('auth/login', async (credentials, { re
     const { data } = await authApi.login(credentials);
     return data.data; // { accessToken, user }
   } catch (err) {
-    return rejectWithValue(err.response?.data?.message || 'Login failed');
+    return rejectWithValue(err.response?.data?.message || (err.response ? 'Login failed' : 'Unable to reach the server. Please try again.'));
   }
 });
 
@@ -50,6 +53,11 @@ export const logoutUser = createAsyncThunk('auth/logout', async () => {
   } catch {
     // Even if the server call fails, we still clear local state below.
   }
+});
+
+export const refreshCurrentUser = createAsyncThunk('auth/me', async () => {
+  const { data } = await authApi.me();
+  return data.data.user;
 });
 
 const authSlice = createSlice({
@@ -64,8 +72,18 @@ const authSlice = createSlice({
       state.accessToken = null;
       state.status = 'unauthenticated';
     },
+    sessionExpired(state) {
+      state.user = null;
+      state.accessToken = null;
+      state.status = 'unauthenticated';
+      state.sessionExpired = true;
+    },
     clearAuthError(state) {
       state.error = null;
+      state.sessionExpired = false;
+    },
+    updateCurrentEmployee(state, action) {
+      if (state.user) state.user.employee = action.payload;
     },
   },
   extraReducers: (builder) => {
@@ -77,6 +95,7 @@ const authSlice = createSlice({
         state.user = action.payload.user;
         state.accessToken = action.payload.accessToken;
         state.status = 'authenticated';
+        state.sessionExpired = false;
       })
       .addCase(bootstrapAuth.rejected, (state) => {
         state.user = null;
@@ -91,6 +110,7 @@ const authSlice = createSlice({
         state.user = action.payload.user;
         state.accessToken = action.payload.accessToken;
         state.status = 'authenticated';
+        state.sessionExpired = false;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.status = 'unauthenticated';
@@ -100,14 +120,20 @@ const authSlice = createSlice({
         state.user = null;
         state.accessToken = null;
         state.status = 'unauthenticated';
+        state.sessionExpired = false;
+      })
+      .addCase(refreshCurrentUser.fulfilled, (state, action) => {
+        state.user = action.payload;
       });
   },
 });
 
-export const { setAccessToken, logout, clearAuthError } = authSlice.actions;
+export const { setAccessToken, logout, sessionExpired, clearAuthError, updateCurrentEmployee } = authSlice.actions;
 export default authSlice.reducer;
 
 // Selectors
 export const selectCurrentUser = (state) => state.auth.user;
 export const selectAuthStatus = (state) => state.auth.status;
 export const selectIsAuthenticated = (state) => state.auth.status === 'authenticated';
+export const selectSessionExpired = (state) => state.auth.sessionExpired;
+export const selectIsHR = (state) => ['HR_ADMIN', 'SUPER_ADMIN'].includes(state.auth.user?.role);

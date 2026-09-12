@@ -28,7 +28,7 @@ beforeEach(async () => {
 
   employee = await Employee.create({
     employeeId: 'EMP0001', firstName: 'John', lastName: 'Doe', email: 'john@test.com',
-    joiningDate: new Date(), department: dept._id, designation: designation._id, status: 'active',
+    joiningDate: new Date('2025-01-01T00:00:00Z'), department: dept._id, designation: designation._id, status: 'active',
   });
 
   hrToken = (await request(app).post('/api/auth/login').send({ email: 'hr@test.com', password: 'Admin@123' })).body.data.accessToken;

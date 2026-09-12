@@ -1,7 +1,18 @@
 const ExcelJS = require('exceljs');
 const { Employee, Attendance, LeaveRequest, Payroll } = require('../models');
-const { startOfDay, endOfDay } = require('../utils/dateHelpers');
+const { startOfDay, endOfDay, toDateString } = require('../utils/dateHelpers');
+const { containsRegex } = require('../utils/regex');
+const env = require('../config/env');
 const asyncHandler = require('../utils/asyncHandler');
+
+// Hard cap so an export can never try to buffer the whole database into
+// one workbook; the UI tells the user to narrow the filters.
+const MAX_EXPORT_ROWS = 10000;
+
+function timeLabel(date) {
+  if (!date) return '';
+  return new Date(date).toLocaleString('en-GB', { timeZone: env.timezone, hour12: false });
+}
 
 // Builds a workbook from column defs + rows and streams it directly to the
 // response — no temp files on disk, which keeps this simple and stateless.
@@ -26,11 +37,16 @@ const exportEmployees = asyncHandler(async (req, res) => {
   if (designation) filter.designation = designation;
   if (status) filter.status = status;
   if (search) {
-    const regex = new RegExp(search, 'i');
+    const regex = containsRegex(search);
     filter.$or = [{ firstName: regex }, { lastName: regex }, { employeeId: regex }, { email: regex }];
   }
 
-  const employees = await Employee.find(filter).populate('department', 'name').populate('designation', 'name');
+  const employees = await Employee.find(filter)
+    .populate('department', 'name')
+    .populate('designation', 'name')
+    .sort({ employeeId: 1 })
+    .limit(MAX_EXPORT_ROWS)
+    .lean();
 
   await sendWorkbook(
     res,
@@ -58,7 +74,7 @@ const exportEmployees = asyncHandler(async (req, res) => {
       designation: e.designation?.name || '',
       employmentType: e.employmentType,
       status: e.status,
-      joiningDate: e.joiningDate?.toISOString().slice(0, 10),
+      joiningDate: e.joiningDate ? toDateString(e.joiningDate, 'UTC') : '',
     }))
   );
 });
@@ -71,11 +87,15 @@ const exportAttendance = asyncHandler(async (req, res) => {
   if (status) filter.status = status;
   if (from || to) {
     filter.date = {};
-    if (from) filter.date.$gte = startOfDay(new Date(from));
-    if (to) filter.date.$lte = endOfDay(new Date(to));
+    if (from) filter.date.$gte = startOfDay(`${from}T00:00:00Z`);
+    if (to) filter.date.$lte = endOfDay(`${to}T00:00:00Z`);
   }
 
-  const records = await Attendance.find(filter).populate('employee', 'firstName lastName employeeId').sort({ date: -1 });
+  const records = await Attendance.find(filter)
+    .populate('employee', 'firstName lastName employeeId')
+    .sort({ date: -1 })
+    .limit(MAX_EXPORT_ROWS)
+    .lean();
 
   await sendWorkbook(
     res,
@@ -93,9 +113,9 @@ const exportAttendance = asyncHandler(async (req, res) => {
     records.map((r) => ({
       employee: r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : '',
       employeeId: r.employee?.employeeId || '',
-      date: r.date?.toISOString().slice(0, 10),
-      checkIn: r.checkIn?.toLocaleString() || '',
-      checkOut: r.checkOut?.toLocaleString() || '',
+      date: r.date ? toDateString(r.date, 'UTC') : '',
+      checkIn: timeLabel(r.checkIn),
+      checkOut: timeLabel(r.checkOut),
       workingHours: r.workingHours,
       status: r.status,
     }))
@@ -112,7 +132,9 @@ const exportLeaves = asyncHandler(async (req, res) => {
   const records = await LeaveRequest.find(filter)
     .populate('employee', 'firstName lastName employeeId')
     .populate('leaveType', 'name')
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(MAX_EXPORT_ROWS)
+    .lean();
 
   await sendWorkbook(
     res,
@@ -132,8 +154,8 @@ const exportLeaves = asyncHandler(async (req, res) => {
       employee: r.employee ? `${r.employee.firstName} ${r.employee.lastName}` : '',
       employeeId: r.employee?.employeeId || '',
       leaveType: r.leaveType?.name || '',
-      startDate: r.startDate?.toISOString().slice(0, 10),
-      endDate: r.endDate?.toISOString().slice(0, 10),
+      startDate: r.startDate ? toDateString(r.startDate, 'UTC') : '',
+      endDate: r.endDate ? toDateString(r.endDate, 'UTC') : '',
       days: r.days,
       status: r.status,
       reason: r.reason,
@@ -149,7 +171,11 @@ const exportPayroll = asyncHandler(async (req, res) => {
   if (employee) filter.employee = employee;
   if (status) filter.status = status;
 
-  const records = await Payroll.find(filter).populate('employee', 'firstName lastName employeeId').sort({ month: -1 });
+  const records = await Payroll.find(filter)
+    .populate('employee', 'firstName lastName employeeId')
+    .sort({ month: -1 })
+    .limit(MAX_EXPORT_ROWS)
+    .lean();
 
   await sendWorkbook(
     res,

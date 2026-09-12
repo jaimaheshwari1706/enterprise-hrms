@@ -14,4 +14,13 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  // Vitest (unit/component tests). jsdom gives components a DOM; the setup
+  // file registers jest-dom matchers and cleans up between tests.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.js'],
+    include: ['src/**/*.test.{js,jsx}'],
+    css: false,
+  },
 })

@@ -1,13 +1,13 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import AuthLayout from '../layouts/AuthLayout';
 import DashboardLayout from '../layouts/DashboardLayout';
 import ProtectedRoute from './ProtectedRoute';
 import RoleRoute from './RoleRoute';
-import { Loading } from '../components/StateViews';
+import { PageSkeleton, AppSplash } from '../components/ui';
 
 // Route-level code splitting: each page becomes its own chunk, fetched only
-// when its route is visited, instead of one ~934KB bundle shipped upfront.
+// when its route is visited, instead of one large bundle shipped upfront.
 const LoginPage = lazy(() => import('../pages/auth/LoginPage'));
 const ForgotPasswordPage = lazy(() => import('../pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('../pages/auth/ResetPasswordPage'));
@@ -24,25 +24,47 @@ const MyLeavesPage = lazy(() => import('../pages/leave/MyLeavesPage'));
 const LeaveApprovalsPage = lazy(() => import('../pages/leave/LeaveApprovalsPage'));
 const MyPayrollPage = lazy(() => import('../pages/payroll/MyPayrollPage'));
 const PayrollManagementPage = lazy(() => import('../pages/payroll/PayrollManagementPage'));
+const PayslipPage = lazy(() => import('../pages/payroll/PayslipPage'));
 const ProfilePage = lazy(() => import('../pages/profile/ProfilePage'));
 const AuditLogsPage = lazy(() => import('../pages/auditLogs/AuditLogsPage'));
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage'));
 
-// As each phase is built, its pages get added here (Employees in Phase 5,
-// Attendance in Phase 6, Leave in Phase 7, Payroll in Phase 8, etc.), each
-// optionally wrapped in <RoleRoute allowed={[...]} /> per the RBAC matrix.
+const HR = ['HR_ADMIN', 'SUPER_ADMIN'];
+const LEADS = ['HR_ADMIN', 'SUPER_ADMIN', 'MANAGER'];
+
 export default function AppRoutes() {
   return (
-    <Suspense fallback={<Loading label="Loading page…" />}>
-      <Routes>
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-        </Route>
+    <Routes>
+      <Route element={<AuthLayout />}>
+        <Route
+          path="/login"
+          element={
+            <Suspense fallback={null}>
+              <LoginPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <Suspense fallback={null}>
+              <ForgotPasswordPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            <Suspense fallback={null}>
+              <ResetPasswordPage />
+            </Suspense>
+          }
+        />
+      </Route>
 
-        <Route element={<ProtectedRoute />}>
-          <Route element={<DashboardLayout />}>
+      <Route element={<ProtectedRoute />}>
+        <Route element={<DashboardLayout />}>
+          <Route element={<SuspendedOutlet />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/departments" element={<DepartmentsPage />} />
             <Route path="/designations" element={<DesignationsPage />} />
@@ -51,14 +73,15 @@ export default function AppRoutes() {
             <Route path="/attendance" element={<AttendancePage />} />
             <Route path="/leaves" element={<MyLeavesPage />} />
             <Route path="/payroll" element={<MyPayrollPage />} />
+            <Route path="/payroll/:id" element={<PayslipPage />} />
             <Route path="/profile" element={<ProfilePage />} />
 
-            <Route element={<RoleRoute allowed={['HR_ADMIN', 'SUPER_ADMIN', 'MANAGER']} />}>
+            <Route element={<RoleRoute allowed={LEADS} />}>
               <Route path="/attendance/team" element={<TeamAttendancePage />} />
               <Route path="/leaves/approvals" element={<LeaveApprovalsPage />} />
             </Route>
 
-            <Route element={<RoleRoute allowed={['HR_ADMIN', 'SUPER_ADMIN']} />}>
+            <Route element={<RoleRoute allowed={HR} />}>
               <Route path="/payroll/manage" element={<PayrollManagementPage />} />
               <Route path="/audit-logs" element={<AuditLogsPage />} />
               <Route path="/employees/new" element={<EmployeeFormPage />} />
@@ -67,10 +90,27 @@ export default function AppRoutes() {
             </Route>
           </Route>
         </Route>
+      </Route>
 
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route
+        path="*"
+        element={
+          <Suspense fallback={<AppSplash />}>
+            <NotFoundPage />
+          </Suspense>
+        }
+      />
+    </Routes>
+  );
+}
+
+// Suspense boundary *inside* the layout so lazy page chunks show a page
+// skeleton in the content area while the sidebar/header stay put.
+function SuspendedOutlet() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <Outlet />
     </Suspense>
   );
 }

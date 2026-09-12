@@ -2,94 +2,92 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useSelector } from 'react-redux';
-import { Upload } from 'lucide-react';
-import { selectCurrentUser } from '../../features/auth/authSlice';
+import { useDispatch, useSelector } from 'react-redux';
+import { Upload, Save, KeyRound, ShieldCheck } from 'lucide-react';
+import { selectCurrentUser, updateCurrentEmployee, setAccessToken } from '../../features/auth/authSlice';
 import { profileApi } from '../../api/profileApi';
 import { useToast } from '../../hooks/useToast';
-import Avatar from '../../components/Avatar';
-import Button from '../../components/Button';
-import { Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { Avatar, Button, Input, FormField, Card, CardHeader, PageHeader, FormSkeleton, Alert, Badge } from '../../components/ui';
+import PasswordStrength from '../../components/PasswordStrength';
+import { passwordSchema } from '../../utils/validation';
+import { getApiErrorMessage } from '../../utils/apiError';
+import { fullName, roleLabel, todayInputValue } from '../../utils/format';
+import SessionsCard from './SessionsCard';
 
 const profileSchema = z.object({
-  phone: z.string().optional(),
+  phone: z.string().trim().max(30).optional(),
   dob: z.string().optional(),
-  addressLine1: z.string().optional(),
-  addressCity: z.string().optional(),
-  addressState: z.string().optional(),
-  addressCountry: z.string().optional(),
-  addressZip: z.string().optional(),
+  addressLine1: z.string().trim().max(200).optional(),
+  addressCity: z.string().trim().max(100).optional(),
+  addressState: z.string().trim().max(100).optional(),
+  addressCountry: z.string().trim().max(100).optional(),
+  addressZip: z.string().trim().max(20).optional(),
 });
 
-const passwordSchema = z
+const passwordFormSchema = z
   .object({
     currentPassword: z.string().min(1, 'Current password is required'),
-    newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+    newPassword: passwordSchema,
     confirmPassword: z.string().min(1, 'Please confirm your new password'),
   })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    message: 'Passwords do not match',
-    path: ['confirmPassword'],
-  });
-
-const inputClass =
-  'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+  .refine((data) => data.newPassword === data.confirmPassword, { message: 'Passwords do not match', path: ['confirmPassword'] })
+  .refine((data) => data.newPassword !== data.currentPassword, { message: 'New password must be different from the current one', path: ['newPassword'] });
 
 export default function ProfilePage() {
   const user = useSelector(selectCurrentUser);
+  const dispatch = useDispatch();
   const { showToast } = useToast();
   const fileInputRef = useRef(null);
 
-  const [status, setStatus] = useState('loading');
-  const [employee, setEmployee] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [profileError, setProfileError] = useState(null);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState(null);
   const [uploading, setUploading] = useState(false);
 
+  const profile = useApiQuery((signal) => profileApi.get({ signal }), []);
+  const employee = profile.data?.employee;
+
   const profileForm = useForm({ resolver: zodResolver(profileSchema) });
-  const passwordForm = useForm({ resolver: zodResolver(passwordSchema) });
+  const passwordForm = useForm({ resolver: zodResolver(passwordFormSchema) });
+  const newPassword = passwordForm.watch('newPassword', '');
 
   useEffect(() => {
-    profileApi
-      .get()
-      .then(({ data }) => {
-        const emp = data.data.employee;
-        setEmployee(emp);
-        if (emp) {
-          profileForm.reset({
-            phone: emp.phone || '',
-            dob: emp.dob ? emp.dob.slice(0, 10) : '',
-            addressLine1: emp.address?.line1 || '',
-            addressCity: emp.address?.city || '',
-            addressState: emp.address?.state || '',
-            addressCountry: emp.address?.country || '',
-            addressZip: emp.address?.zip || '',
-          });
-        }
-        setStatus('ready');
-      })
-      .catch(() => setStatus('error'));
+    if (!employee) return;
+    profileForm.reset({
+      phone: employee.phone || '',
+      dob: employee.dob ? employee.dob.slice(0, 10) : '',
+      addressLine1: employee.address?.line1 || '',
+      addressCity: employee.address?.city || '',
+      addressState: employee.address?.state || '',
+      addressCountry: employee.address?.country || '',
+      addressZip: employee.address?.zip || '',
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [employee]);
 
   const onSaveProfile = async (values) => {
     setSaving(true);
+    setProfileError(null);
     try {
       const { data } = await profileApi.update({
-        phone: values.phone,
-        dob: values.dob || undefined,
+        phone: values.phone || '',
+        dob: values.dob || '',
         address: {
-          line1: values.addressLine1,
-          city: values.addressCity,
-          state: values.addressState,
-          country: values.addressCountry,
-          zip: values.addressZip,
+          line1: values.addressLine1 || '',
+          city: values.addressCity || '',
+          state: values.addressState || '',
+          country: values.addressCountry || '',
+          zip: values.addressZip || '',
         },
       });
-      setEmployee(data.data);
-      showToast('Profile updated successfully');
+      profile.setData((prev) => ({ ...prev, employee: data.data }));
+      dispatch(updateCurrentEmployee(data.data));
+      profileForm.reset(values);
+      showToast('Profile updated');
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to update profile', 'error');
+      setProfileError(getApiErrorMessage(err, 'Unable to update your profile.'));
     } finally {
       setSaving(false);
     }
@@ -97,15 +95,16 @@ export default function ProfilePage() {
 
   const onChangePassword = async (values) => {
     setChangingPassword(true);
+    setPasswordError(null);
     try {
-      await profileApi.changePassword({
-        currentPassword: values.currentPassword,
-        newPassword: values.newPassword,
-      });
-      showToast('Password changed successfully');
+      const { data } = await profileApi.changePassword({ currentPassword: values.currentPassword, newPassword: values.newPassword });
+      // The server rotated this browser's session (every other one was
+      // revoked); adopt the new access token so we stay signed in here.
+      if (data.data?.accessToken) dispatch(setAccessToken(data.data.accessToken));
+      showToast({ title: 'Password changed', message: 'Other devices have been signed out.' });
       passwordForm.reset({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to change password', 'error');
+      setPasswordError(getApiErrorMessage(err, 'Unable to change your password.'));
     } finally {
       setChangingPassword(false);
     }
@@ -117,135 +116,129 @@ export default function ProfilePage() {
     setUploading(true);
     try {
       const { data } = await profileApi.uploadAvatar(file);
-      setEmployee(data.data);
+      profile.setData((prev) => ({ ...prev, employee: data.data }));
+      dispatch(updateCurrentEmployee(data.data));
       showToast('Profile photo updated');
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to upload photo', 'error');
+      showToast(getApiErrorMessage(err, 'Unable to upload photo.'), 'error');
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 
-  if (status === 'loading') return <Loading label="Loading profile…" />;
+  if (profile.status === 'loading') {
+    return (
+      <div className="max-w-3xl">
+        <PageHeader title="My Profile" />
+        <FormSkeleton />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <div>
-        <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-white">My Profile</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Manage your personal information and account security.</p>
-      </div>
+    <div className="max-w-3xl space-y-5">
+      <PageHeader title="My Profile" description="Your personal information and account security." />
 
-      <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        <Avatar src={employee?.profileImageUrl} name={employee ? `${employee.firstName} ${employee.lastName}` : user?.email} size={64} />
-        <div>
-          <p className="font-medium text-slate-900 dark:text-white">
-            {employee ? `${employee.firstName} ${employee.lastName}` : user?.email}
-          </p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{user?.email} · {user?.role}</p>
+      <Card>
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+          <Avatar src={employee?.profileImageUrl} name={employee ? fullName(employee) : user?.email} size={72} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">{employee ? fullName(employee) : user?.email}</p>
+              <Badge tone="primary">{roleLabel(user?.role)}</Badge>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{user?.email}</p>
+            {employee && (
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-mono">{employee.employeeId}</span> · {employee.designation?.name || '—'} · {employee.department?.name || '—'}
+              </p>
+            )}
+          </div>
           {employee && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handleAvatarChange}
-              />
-              <Button variant="secondary" className="mt-2" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                <Upload size={14} /> {uploading ? 'Uploading…' : 'Change photo'}
+            <div>
+              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleAvatarChange} />
+              <Button variant="secondary" icon={Upload} onClick={() => fileInputRef.current?.click()} loading={uploading}>
+                Change photo
               </Button>
-            </>
+            </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {employee ? (
-        <form
-          onSubmit={profileForm.handleSubmit(onSaveProfile)}
-          className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
-          noValidate
-        >
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Personal Information</h2>
-          <p className="text-xs text-slate-400">
-            Job details like department, designation, and manager are managed by HR.
-          </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Phone</label>
-              <input {...profileForm.register('phone')} className={inputClass} />
+        <form onSubmit={profileForm.handleSubmit(onSaveProfile)} noValidate>
+          <Card>
+            <CardHeader title="Personal information" description="Job details like department, designation and manager are managed by HR." />
+            <div className="space-y-4 p-5">
+              {profileError && <Alert tone="danger">{profileError}</Alert>}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField label="Phone" error={profileForm.formState.errors.phone?.message}>
+                  <Input type="tel" autoComplete="tel" {...profileForm.register('phone')} />
+                </FormField>
+                <FormField label="Date of birth" error={profileForm.formState.errors.dob?.message}>
+                  <Input type="date" max={todayInputValue()} {...profileForm.register('dob')} />
+                </FormField>
+                <FormField label="Address line 1" className="sm:col-span-2">
+                  <Input autoComplete="address-line1" {...profileForm.register('addressLine1')} />
+                </FormField>
+                <FormField label="City">
+                  <Input autoComplete="address-level2" {...profileForm.register('addressCity')} />
+                </FormField>
+                <FormField label="State">
+                  <Input autoComplete="address-level1" {...profileForm.register('addressState')} />
+                </FormField>
+                <FormField label="Country">
+                  <Input autoComplete="country-name" {...profileForm.register('addressCountry')} />
+                </FormField>
+                <FormField label="ZIP / Postal code">
+                  <Input autoComplete="postal-code" {...profileForm.register('addressZip')} />
+                </FormField>
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit" icon={Save} loading={saving} disabled={!profileForm.formState.isDirty}>
+                  Save changes
+                </Button>
+              </div>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Date of Birth</label>
-              <input type="date" {...profileForm.register('dob')} className={inputClass} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Address Line 1</label>
-              <input {...profileForm.register('addressLine1')} className={inputClass} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">City</label>
-              <input {...profileForm.register('addressCity')} className={inputClass} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">State</label>
-              <input {...profileForm.register('addressState')} className={inputClass} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Country</label>
-              <input {...profileForm.register('addressCountry')} className={inputClass} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">ZIP / Postal Code</label>
-              <input {...profileForm.register('addressZip')} className={inputClass} />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Saving…' : 'Save changes'}
-            </Button>
-          </div>
+          </Card>
         </form>
       ) : (
-        <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-          No employee profile is linked to this account.
-        </div>
+        <Alert tone="info" title="No employee profile linked">
+          This account is an administrator login without an employee record, so there are no personal details to edit here.
+        </Alert>
       )}
 
-      <form
-        onSubmit={passwordForm.handleSubmit(onChangePassword)}
-        className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
-        noValidate
-      >
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Change Password</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Current Password</label>
-            <input type="password" {...passwordForm.register('currentPassword')} className={inputClass} />
-            {passwordForm.formState.errors.currentPassword && (
-              <p className="mt-1 text-xs text-red-600">{passwordForm.formState.errors.currentPassword.message}</p>
-            )}
+      <form onSubmit={passwordForm.handleSubmit(onChangePassword)} noValidate>
+        <Card>
+          <CardHeader title="Change password" description="Use at least 8 characters with a letter and a number. Changing it signs out your other devices." />
+          <div className="space-y-4 p-5">
+            {passwordError && <Alert tone="danger">{passwordError}</Alert>}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <FormField label="Current password" required error={passwordForm.formState.errors.currentPassword?.message}>
+                <Input type="password" autoComplete="current-password" {...passwordForm.register('currentPassword')} />
+              </FormField>
+              <FormField label="New password" required error={passwordForm.formState.errors.newPassword?.message}>
+                <Input type="password" autoComplete="new-password" {...passwordForm.register('newPassword')} />
+              </FormField>
+              <FormField label="Confirm new password" required error={passwordForm.formState.errors.confirmPassword?.message}>
+                <Input type="password" autoComplete="new-password" {...passwordForm.register('confirmPassword')} />
+              </FormField>
+            </div>
+            <PasswordStrength value={newPassword} />
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <ShieldCheck size={14} aria-hidden="true" /> Passwords are hashed and never stored in plain text.
+              </p>
+              <Button type="submit" icon={KeyRound} loading={changingPassword}>
+                Change password
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">New Password</label>
-            <input type="password" {...passwordForm.register('newPassword')} className={inputClass} />
-            {passwordForm.formState.errors.newPassword && (
-              <p className="mt-1 text-xs text-red-600">{passwordForm.formState.errors.newPassword.message}</p>
-            )}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Confirm New Password</label>
-            <input type="password" {...passwordForm.register('confirmPassword')} className={inputClass} />
-            {passwordForm.formState.errors.confirmPassword && (
-              <p className="mt-1 text-xs text-red-600">{passwordForm.formState.errors.confirmPassword.message}</p>
-            )}
-          </div>
-        </div>
-        <div className="flex justify-end">
-          <Button type="submit" disabled={changingPassword}>
-            {changingPassword ? 'Updating…' : 'Change password'}
-          </Button>
-        </div>
+        </Card>
       </form>
+
+      <SessionsCard />
     </div>
   );
 }

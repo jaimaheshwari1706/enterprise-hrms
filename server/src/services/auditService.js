@@ -1,4 +1,5 @@
 const { AuditLog } = require('../models');
+const logger = require('../utils/logger');
 
 // A single, reusable place to write audit entries (Module 13). Any
 // controller across the app can call this after a meaningful action
@@ -18,7 +19,7 @@ async function logAction({ user, action, entityType, entityId = null, descriptio
       ipAddress: ip,
     });
   } catch (err) {
-    console.error('[audit] failed to write audit log:', err.message);
+    logger.error('Failed to write audit log', { action, entityType, error: err });
   }
 }
 

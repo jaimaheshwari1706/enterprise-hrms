@@ -1,12 +1,14 @@
 import api from './axiosInstance';
 
 export const employeeApi = {
-  list: (params) => api.get('/employees', { params }),
-  search: (q) => api.get('/employees/search', { params: { q } }),
-  get: (id) => api.get(`/employees/${id}`),
+  list: (params, config) => api.get('/employees', { params, ...config }),
+  options: (config) => api.get('/employees/options', config),
+  search: (q, config) => api.get('/employees/search', { params: { q }, ...config }),
+  get: (id, config) => api.get(`/employees/${id}`, config),
   create: (payload) => api.post('/employees', payload),
   update: (id, payload) => api.put(`/employees/${id}`, payload),
-  updateStatus: (id, status) => api.patch(`/employees/${id}/status`, { status }),
+  // exitDate (YYYY-MM-DD) is the last working day when deactivating.
+  updateStatus: (id, status, exitDate) => api.patch(`/employees/${id}/status`, exitDate ? { status, exitDate } : { status }),
   uploadProfileImage: (id, file) => {
     const formData = new FormData();
     formData.append('profileImage', file);

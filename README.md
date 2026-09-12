@@ -199,9 +199,9 @@ npm run dev            # runs API (5000) + Vite dev server (5173) together
 
 ```bash
 cd server
-cp .env.example .env      # edit MONGO_URI and any other values you need
+cp .env.example .env
 npm install
-npm run seed                # populates realistic demo data (see below)
+npm run seed
 npm run dev                  # http://localhost:5000/api/health
 ```
 
@@ -218,9 +218,20 @@ npm run dev                   # http://localhost:5173
 
 **`server/.env`** — see [`server/.env.example`](server/.env.example) for the
 full list (`MONGO_URI`, `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`,
+`APP_TIMEZONE`, `AUTH_MAX_FAILED_LOGINS`/`AUTH_LOCKOUT_MINUTES`, `LOG_LEVEL`,
 `REDIS_ENABLED`/`REDIS_URL`, `CLOUDINARY_*`, `EMAIL_ENABLED`/`SMTP_*`,
-`CLIENT_URL`, `NODE_ENV`). **`client/.env`** — `VITE_API_BASE_URL` (baked in
-at build time; see Docker note below).
+`CLIENT_URL`, `CORS_ORIGINS`, `NODE_ENV`). In production the server refuses to
+boot without `MONGO_URI` and two distinct JWT secrets of at least 32
+characters.
+
+`APP_TIMEZONE` (IANA name, default `Asia/Kolkata`) decides which calendar day
+a check-in or leave day belongs to — attendance keys are stored as UTC
+midnight of that business day so the server's own timezone (Render = UTC)
+never matters.
+
+**`client/.env`** — `VITE_API_BASE_URL` (baked in at build time; see Docker
+note below), optional `VITE_CURRENCY` (default `INR`) and `VITE_LOCALE`
+(default `en-IN`) for money formatting.
 
 ### Demo data & accounts
 
@@ -345,7 +356,11 @@ Redeploy the backend after changing it — it's read once at process start.
    both ports straight to the host with no auth; fine on a laptop, not on a
    public VM. Atlas/Render-hosted Redis handle this for you.
 5. **Never seed a real environment**, and rotate/delete the demo accounts
-   above before onboarding real users.
+   above before onboarding real users. `npm run seed` refuses to run with
+   `NODE_ENV=production` unless `SEED_ALLOW_DESTRUCTIVE=true` is set.
+6. **Set `APP_TIMEZONE`** to the organization's timezone so "today" for
+   attendance and leave is computed correctly regardless of where the
+   server runs.
 
 ## Project Structure
 

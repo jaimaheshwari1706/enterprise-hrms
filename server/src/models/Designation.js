@@ -11,4 +11,6 @@ const designationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+designationSchema.index({ department: 1, status: 1 });
+
 module.exports = mongoose.model('Designation', designationSchema);

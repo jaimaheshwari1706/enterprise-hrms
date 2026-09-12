@@ -13,4 +13,5 @@ module.exports = {
   Payroll: require('./Payroll'),
   Notification: require('./Notification'),
   AuditLog: require('./AuditLog'),
+  Counter: require('./Counter'),
 };

@@ -1,24 +1,27 @@
 const { z } = require('zod');
+const { objectId, dateString, optionalText, pageQuery, sortQuery, searchQuery } = require('./common');
 
-const addressSchema = z.object({
-  line1: z.string().optional().or(z.literal('')),
-  city: z.string().optional().or(z.literal('')),
-  state: z.string().optional().or(z.literal('')),
-  country: z.string().optional().or(z.literal('')),
-  zip: z.string().optional().or(z.literal('')),
-}).optional();
+const addressSchema = z
+  .object({
+    line1: optionalText(200),
+    city: optionalText(100),
+    state: optionalText(100),
+    country: optionalText(100),
+    zip: optionalText(20),
+  })
+  .optional();
 
 const baseEmployeeFields = {
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  email: z.string().email('Enter a valid email address'),
-  phone: z.string().optional().or(z.literal('')),
-  dob: z.string().optional().or(z.literal('')),
+  firstName: z.string().trim().min(1, 'First name is required').max(60),
+  lastName: z.string().trim().min(1, 'Last name is required').max(60),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address').max(254),
+  phone: optionalText(30),
+  dob: dateString('Date of birth').optional().or(z.literal('')),
   gender: z.enum(['Male', 'Female', 'Other']).optional(),
-  joiningDate: z.string().min(1, 'Joining date is required'),
-  department: z.string().min(1, 'Department is required'),
-  designation: z.string().min(1, 'Designation is required'),
-  manager: z.string().optional().nullable(),
+  joiningDate: dateString('Joining date'),
+  department: objectId('Department'),
+  designation: objectId('Designation'),
+  manager: objectId('Manager').optional().nullable().or(z.literal('')),
   employmentType: z.enum(['Full-Time', 'Part-Time', 'Contract', 'Intern']).optional(),
   address: addressSchema,
 };
@@ -29,10 +32,43 @@ const createEmployeeSchema = z.object({
   role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN']).optional(),
 });
 
-const updateEmployeeSchema = z.object(baseEmployeeFields);
+const updateEmployeeSchema = z
+  .object({
+    ...baseEmployeeFields,
+    exitDate: dateString('Exit date').optional().nullable().or(z.literal('')),
+  })
+  .refine((data) => !data.exitDate || data.exitDate >= data.joiningDate, {
+    message: 'Exit date cannot be before the joining date',
+    path: ['exitDate'],
+  });
 
 const updateStatusSchema = z.object({
   status: z.enum(['active', 'inactive']),
+  // Last working day when deactivating; defaults to today.
+  exitDate: dateString('Exit date').optional().or(z.literal('')),
 });
 
-module.exports = { createEmployeeSchema, updateEmployeeSchema, updateStatusSchema };
+const EMPLOYEE_SORT_FIELDS = ['createdAt', 'firstName', 'lastName', 'employeeId', 'joiningDate', 'status'];
+
+const listEmployeesQuery = z.object({
+  ...pageQuery,
+  sort: sortQuery(EMPLOYEE_SORT_FIELDS),
+  search: searchQuery,
+  department: objectId('department').optional().or(z.literal('')),
+  designation: objectId('designation').optional().or(z.literal('')),
+  status: z.enum(['active', 'inactive']).optional().or(z.literal('')),
+  employmentType: z.enum(['Full-Time', 'Part-Time', 'Contract', 'Intern']).optional().or(z.literal('')),
+});
+
+const quickSearchQuery = z.object({
+  q: z.string().trim().max(100).optional(),
+});
+
+module.exports = {
+  createEmployeeSchema,
+  updateEmployeeSchema,
+  updateStatusSchema,
+  listEmployeesQuery,
+  quickSearchQuery,
+  EMPLOYEE_SORT_FIELDS,
+};

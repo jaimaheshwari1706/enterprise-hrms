@@ -4,7 +4,7 @@ import api from './axiosInstance';
 // trigger a browser download rather than routing through the normal
 // interceptor flow used by other API calls.
 async function downloadFile(path, params, filename) {
-  const response = await api.get(path, { params, responseType: 'blob' });
+  const response = await api.get(path, { params, responseType: 'blob', timeout: 120000 });
   const url = window.URL.createObjectURL(new Blob([response.data]));
   const link = document.createElement('a');
   link.href = url;
@@ -15,9 +15,11 @@ async function downloadFile(path, params, filename) {
   window.URL.revokeObjectURL(url);
 }
 
+const stamp = () => new Date().toISOString().slice(0, 10);
+
 export const exportApi = {
-  employees: (params) => downloadFile('/export/employees.xlsx', params, 'employees.xlsx'),
-  attendance: (params) => downloadFile('/export/attendance.xlsx', params, 'attendance.xlsx'),
-  leaves: (params) => downloadFile('/export/leaves.xlsx', params, 'leaves.xlsx'),
-  payroll: (params) => downloadFile('/export/payroll.xlsx', params, 'payroll.xlsx'),
+  employees: (params) => downloadFile('/export/employees.xlsx', params, `employees-${stamp()}.xlsx`),
+  attendance: (params) => downloadFile('/export/attendance.xlsx', params, `attendance-${stamp()}.xlsx`),
+  leaves: (params) => downloadFile('/export/leaves.xlsx', params, `leave-requests-${stamp()}.xlsx`),
+  payroll: (params) => downloadFile('/export/payroll.xlsx', params, `payroll-${stamp()}.xlsx`),
 };

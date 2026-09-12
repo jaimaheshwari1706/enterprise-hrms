@@ -13,5 +13,6 @@ router.use('/notifications', require('./notification.routes'));
 router.use('/audit-logs', require('./auditLog.routes'));
 router.use('/profile', require('./profile.routes'));
 router.use('/export', require('./export.routes'));
+router.use('/search', require('./search.routes'));
 
 module.exports = router;

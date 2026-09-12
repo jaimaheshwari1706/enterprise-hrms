@@ -1,25 +1,41 @@
 const { Department, Designation, Employee } = require('../models');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
-const { getPagination, buildPaginationMeta } = require('../utils/pagination');
+const { getPagination, buildPaginationMeta, getSort } = require('../utils/pagination');
+const { containsRegex } = require('../utils/regex');
 const { logAction } = require('../services/auditService');
+const { DEPARTMENT_SORT_FIELDS } = require('../validations/department.validation');
 const ApiError = require('../utils/ApiError');
 
-// GET /api/departments?page=&limit=&search=&status=
+// The optional department head must be a real employee.
+async function assertHeadExists(head) {
+  if (!head) return;
+  const exists = await Employee.exists({ _id: head });
+  if (!exists) throw new ApiError(422, 'Validation failed', ['head: Employee not found']);
+}
+
+// GET /api/departments?page=&limit=&sort=&search=&status=
 const listDepartments = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
+  const sort = getSort(req.query, DEPARTMENT_SORT_FIELDS, { createdAt: -1 });
   const { search, status } = req.query;
 
   const filter = {};
   if (status) filter.status = status;
-  if (search) filter.$text = { $search: search };
+  // Partial, case-insensitive match on name or code ("eng" finds
+  // "Engineering") — the old $text index only matched whole words.
+  if (search) {
+    const regex = containsRegex(search);
+    filter.$or = [{ name: regex }, { code: regex }];
+  }
 
   const [data, total] = await Promise.all([
     Department.find(filter)
       .populate('head', 'firstName lastName employeeId')
-      .sort({ createdAt: -1 })
+      .sort(sort)
       .skip(skip)
-      .limit(limit),
+      .limit(limit)
+      .lean(),
     Department.countDocuments(filter),
   ]);
 
@@ -35,7 +51,9 @@ const getDepartment = asyncHandler(async (req, res) => {
 
 // POST /api/departments  (HR_ADMIN, SUPER_ADMIN)
 const createDepartment = asyncHandler(async (req, res) => {
-  const department = await Department.create(req.body);
+  const body = { ...req.body, head: req.body.head || null };
+  await assertHeadExists(body.head);
+  const department = await Department.create(body);
 
   await logAction({
     user: req.user,
@@ -51,7 +69,9 @@ const createDepartment = asyncHandler(async (req, res) => {
 
 // PUT /api/departments/:id  (HR_ADMIN, SUPER_ADMIN)
 const updateDepartment = asyncHandler(async (req, res) => {
-  const department = await Department.findByIdAndUpdate(req.params.id, req.body, {
+  const body = { ...req.body, head: req.body.head || null };
+  await assertHeadExists(body.head);
+  const department = await Department.findByIdAndUpdate(req.params.id, body, {
     new: true,
     runValidators: true,
   });

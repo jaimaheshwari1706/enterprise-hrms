@@ -1,62 +1,43 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Plus, XCircle } from 'lucide-react';
+import { useState } from 'react';
+import { useSelector } from 'react-redux';
+import { Plus, XCircle, CalendarDays } from 'lucide-react';
 import { leaveApi } from '../../api/leaveApi';
+import { selectCurrentUser } from '../../features/auth/authSlice';
 import { useToast } from '../../hooks/useToast';
-import Button from '../../components/Button';
-import Pagination from '../../components/Pagination';
-import StatusBadge from '../../components/StatusBadge';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import { Button, IconButton, Card, CardHeader, PageHeader, DataTable, StatusBadge, ConfirmDialog, Select, Toolbar, Alert, ProgressBar, Skeleton, NoResults, Tooltip } from '../../components/ui';
+import { formatDate } from '../../utils/format';
+import { getApiErrorMessage } from '../../utils/apiError';
 import LeaveFormModal from './LeaveFormModal';
 
-function formatDate(value) {
-  return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
 export default function MyLeavesPage() {
+  const user = useSelector(selectCurrentUser);
+  const hasProfile = Boolean(user?.employee);
   const { showToast } = useToast();
 
-  const [leaveTypes, setLeaveTypes] = useState([]);
-  const [leaves, setLeaves] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [page, setPage] = useState(1);
-  const [status, setStatus] = useState('loading');
+  const leaveTypes = useApiQuery((signal) => leaveApi.leaveTypes({ signal }), [], { enabled: hasProfile });
+  const balance = useApiQuery((signal) => leaveApi.myBalance({ signal }), [], { enabled: hasProfile });
+  const list = useListParams({ pageSize: 10, sort: '-createdAt', filters: { status: '' } });
+  const leaves = useApiQuery((signal) => leaveApi.myLeaves(list.params, { signal }), [JSON.stringify(list.params)], { enabled: hasProfile });
 
   const [formOpen, setFormOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
+  const [formError, setFormError] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelling, setCancelling] = useState(false);
 
-  useEffect(() => {
-    leaveApi.leaveTypes().then(({ data }) => setLeaveTypes(data.data));
-  }, []);
-
-  const fetchLeaves = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await leaveApi.myLeaves({ page, limit: 10 });
-      setLeaves(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page]);
-
-  useEffect(() => {
-    fetchLeaves();
-  }, [fetchLeaves]);
-
   const handleApply = async (values) => {
     setSubmitting(true);
+    setFormError(null);
     try {
       await leaveApi.apply(values);
-      showToast('Leave request submitted');
+      showToast({ title: 'Leave request submitted', message: 'Your manager has been notified.' });
       setFormOpen(false);
-      fetchLeaves();
+      leaves.refetch();
+      balance.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to submit leave request', 'error');
+      setFormError(getApiErrorMessage(err, 'Unable to submit the request.'));
     } finally {
       setSubmitting(false);
     }
@@ -68,81 +49,167 @@ export default function MyLeavesPage() {
       await leaveApi.cancel(cancelTarget._id);
       showToast('Leave request cancelled');
       setCancelTarget(null);
-      fetchLeaves();
+      leaves.refetch();
+      balance.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to cancel leave request', 'error');
+      showToast(getApiErrorMessage(err, 'Unable to cancel the request.'), 'error');
     } finally {
       setCancelling(false);
     }
   };
 
+  const columns = [
+    {
+      key: 'type',
+      header: 'Leave type',
+      primary: true,
+      render: (leave) => (
+        <div>
+          <p className="font-medium text-slate-900 dark:text-white">{leave.leaveType?.name || '—'}</p>
+          <p className="max-w-xs truncate text-xs text-slate-500 dark:text-slate-400" title={leave.reason}>
+            {leave.reason}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'dates',
+      header: 'Dates',
+      sortKey: 'startDate',
+      render: (leave) => (
+        <span className="tabular">
+          {formatDate(leave.startDate)} – {formatDate(leave.endDate)}
+        </span>
+      ),
+      className: 'text-slate-600 dark:text-slate-300',
+    },
+    { key: 'days', header: 'Days', sortKey: 'days', align: 'right', render: (leave) => leave.days, className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'status', header: 'Status', sortKey: 'status', render: (leave) => <StatusBadge status={leave.status} /> },
+    {
+      key: 'comment',
+      header: 'Approver note',
+      render: (leave) => (leave.approverComment ? <span className="line-clamp-2 max-w-xs text-xs">{leave.approverComment}</span> : <span className="text-slate-400">—</span>),
+      className: 'text-slate-600 dark:text-slate-300',
+      hideOnMobile: false,
+    },
+    { key: 'requested', header: 'Requested', sortKey: 'createdAt', defaultDesc: true, render: (leave) => formatDate(leave.createdAt), className: 'text-slate-500 tabular dark:text-slate-400', hideOnMobile: true },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isActions: true,
+      align: 'right',
+      width: 56,
+      render: (leave) =>
+        leave.status === 'Pending' ? (
+          <IconButton label="Cancel request" icon={XCircle} tone="danger" onClick={() => setCancelTarget(leave)} />
+        ) : null,
+    },
+  ];
+
+  if (!hasProfile) {
+    return (
+      <div>
+        <PageHeader title="My Leave" description="Apply for leave and track your requests." />
+        <Alert tone="info" title="No employee profile linked">
+          Leave requests are filed against an employee record. Ask HR to link one to this account.
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Leave</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Apply for leave and track your requests.</p>
-        </div>
-        <Button onClick={() => setFormOpen(true)} disabled={leaveTypes.length === 0}>
-          <Plus size={16} /> Apply for Leave
-        </Button>
-      </div>
+      <PageHeader
+        title="My Leave"
+        description="Apply for leave and track your requests."
+        actions={
+          <Button icon={Plus} onClick={() => { setFormError(null); setFormOpen(true); }} disabled={!leaveTypes.data?.length}>
+            Apply for leave
+          </Button>
+        }
+      />
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {status === 'loading' && <Loading label="Loading your leave requests…" />}
-        {status === 'error' && <ErrorState message="Failed to load leave requests." />}
-        {status === 'ready' && leaves.length === 0 && (
-          <EmptyState title="No leave requests yet" message="Apply for leave using the button above." />
+      <Card className="mb-6">
+        <CardHeader title="Balance this year" description="Remaining days per leave type; pending requests are reserved until decided" />
+        {balance.status === 'loading' ? (
+          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="space-y-2">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-6 w-16" />
+                <Skeleton className="h-1.5 w-full" />
+              </div>
+            ))}
+          </div>
+        ) : balance.status === 'error' ? (
+          <p className="p-5 text-sm text-slate-500">{balance.error}</p>
+        ) : (balance.data || []).length === 0 ? (
+          <p className="p-5 text-sm text-slate-500 dark:text-slate-400">No leave types have been configured yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-x-8 gap-y-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
+            {balance.data.map((lb) => {
+              const consumed = lb.used + lb.pending;
+              return (
+                <div key={lb.leaveTypeId}>
+                  <div className="flex items-baseline justify-between">
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{lb.leaveType}</p>
+                    <Tooltip text={`${lb.used} used · ${lb.pending} pending · ${lb.allocated} allocated`}>
+                      <p className="text-lg font-semibold text-slate-900 tabular dark:text-white">
+                        {lb.remaining} <span className="text-xs font-normal text-slate-400">/ {lb.allocated}</span>
+                      </p>
+                    </Tooltip>
+                  </div>
+                  <ProgressBar value={consumed} max={lb.allocated} tone={lb.remaining === 0 ? 'danger' : consumed / lb.allocated > 0.75 ? 'warning' : 'primary'} label={`${lb.leaveType} used`} className="mt-2" />
+                </div>
+              );
+            })}
+          </div>
         )}
-        {status === 'ready' && leaves.length > 0 && (
-          <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Dates</th>
-                  <th className="px-4 py-3 font-medium">Days</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Comment</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {leaves.map((leave) => (
-                  <tr key={leave._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="px-4 py-3 font-medium">{leave.leaveType?.name}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                      {formatDate(leave.startDate)} – {formatDate(leave.endDate)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{leave.days}</td>
-                    <td className="px-4 py-3"><StatusBadge status={leave.status} /></td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{leave.approverComment || '—'}</td>
-                    <td className="px-4 py-3">
-                      {leave.status === 'Pending' && (
-                        <button
-                          onClick={() => setCancelTarget(leave)}
-                          className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
-                          title="Cancel request"
-                        >
-                          <XCircle size={15} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
-          </>
+      </Card>
+
+      <Toolbar>
+        <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-44">
+          <option value="">All requests</option>
+          <option value="Pending">Pending</option>
+          <option value="Approved">Approved</option>
+          <option value="Rejected">Rejected</option>
+          <option value="Cancelled">Cancelled</option>
+        </Select>
+      </Toolbar>
+
+      <Card>
+        {leaves.status === 'ready' && leaves.data?.length === 0 && list.hasActiveFilters ? (
+          <NoResults onClear={list.resetFilters} />
+        ) : (
+          <DataTable
+            caption="My leave requests"
+            columns={columns}
+            rows={leaves.data || []}
+            status={leaves.status}
+            isFetching={leaves.isFetching}
+            error={leaves.error}
+            onRetry={leaves.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={leaves.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={CalendarDays}
+            emptyTitle="No leave requests yet"
+            emptyMessage="When you apply for leave, the request and its status will appear here."
+            emptyAction={leaveTypes.data?.length ? <Button icon={Plus} onClick={() => setFormOpen(true)}>Apply for leave</Button> : null}
+          />
         )}
-      </div>
+      </Card>
 
       <LeaveFormModal
         open={formOpen}
         onClose={() => setFormOpen(false)}
         onSubmit={handleApply}
-        leaveTypes={leaveTypes}
+        leaveTypes={leaveTypes.data || []}
+        balance={balance.data || []}
         submitting={submitting}
+        serverError={formError}
       />
 
       <ConfirmDialog
@@ -150,8 +217,9 @@ export default function MyLeavesPage() {
         onClose={() => setCancelTarget(null)}
         onConfirm={handleCancel}
         title="Cancel leave request"
-        message="Are you sure you want to cancel this pending leave request?"
+        message={cancelTarget ? `Cancel your ${cancelTarget.leaveType?.name} request for ${formatDate(cancelTarget.startDate)} – ${formatDate(cancelTarget.endDate)}? The reserved days return to your balance.` : ''}
         confirmLabel="Cancel request"
+        cancelLabel="Keep request"
         loading={cancelling}
       />
     </div>

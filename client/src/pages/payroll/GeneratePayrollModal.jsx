@@ -1,65 +1,66 @@
-import { useEffect, useState } from 'react';
-import Modal from '../../components/Modal';
-import Button from '../../components/Button';
+import { useEffect, useRef, useState } from 'react';
+import { Modal, Button, Input, Select, FormField, Alert } from '../../components/ui';
+import { currentMonthInputValue, formatMonth, fullName } from '../../utils/format';
 
-const inputClass =
-  'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
-
-function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-export default function GeneratePayrollModal({ open, onClose, onSubmit, employees, submitting }) {
-  const [month, setMonth] = useState(currentMonth());
+export default function GeneratePayrollModal({ open, onClose, onSubmit, employees, submitting, serverError }) {
+  const [month, setMonth] = useState(currentMonthInputValue());
   const [employeeId, setEmployeeId] = useState('');
+  const monthRef = useRef(null);
 
   useEffect(() => {
     if (open) {
-      setMonth(currentMonth());
+      setMonth(currentMonthInputValue());
       setEmployeeId('');
     }
   }, [open]);
 
-  const handleSubmit = () => onSubmit({ month, employeeId: employeeId || undefined });
+  const isFuture = month > currentMonthInputValue();
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (!month) return;
+    onSubmit({ month, employeeId: employeeId || undefined });
+  };
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
-      title="Generate Payroll"
+      onClose={submitting ? undefined : onClose}
+      title="Generate payroll"
+      description="Creates Draft payslips from each employee's salary structure."
+      size="sm"
+      initialFocusRef={monthRef}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={submitting || !month}>
-            {submitting ? 'Generating…' : 'Generate'}
+          <Button type="submit" form="generate-payroll-form" loading={submitting} disabled={!month}>
+            Generate{month ? ` for ${formatMonth(month)}` : ''}
           </Button>
         </>
       }
     >
-      <div className="space-y-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Month</label>
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={inputClass} />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-            Employee (optional)
-          </label>
-          <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={inputClass}>
+      <form id="generate-payroll-form" onSubmit={handleSubmit} className="space-y-4">
+        {serverError && <Alert tone="danger">{serverError}</Alert>}
+        <FormField label="Month" required>
+          <Input ref={monthRef} type="month" value={month} onChange={(e) => setMonth(e.target.value)} required />
+        </FormField>
+        <FormField label="Employee" hint="Leave as all to run payroll for every active employee">
+          <Select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
             <option value="">All active employees</option>
             {employees.map((e) => (
-              <option key={e._id} value={e._id}>{e.firstName} {e.lastName} ({e.employeeId})</option>
+              <option key={e._id} value={e._id}>
+                {fullName(e)} ({e.employeeId})
+              </option>
             ))}
-          </select>
-        </div>
-        <p className="text-xs text-slate-400">
-          Employees without a configured salary structure will be skipped. Records already generated for this
-          month won&apos;t be duplicated.
+          </Select>
+        </FormField>
+        {isFuture && <Alert tone="warning">You are generating payroll for a future month.</Alert>}
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Employees without a salary structure are skipped. Existing payslips for the month are never overwritten.
         </p>
-      </div>
+      </form>
     </Modal>
   );
 }

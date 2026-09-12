@@ -5,13 +5,16 @@ const env = require('../config/env');
 // silently fail to clear/overwrite the cookie on logout).
 const REFRESH_COOKIE_NAME = 'refreshToken';
 
-function refreshCookieOptions() {
+// `expiresAt` is the refresh JWT's own expiry (see tokens.getTokenExpiry) so
+// the cookie lifetime always matches JWT_REFRESH_EXPIRY instead of a
+// hard-coded 7 days.
+function refreshCookieOptions(expiresAt) {
   return {
     httpOnly: true,
-    secure: env.nodeEnv === 'production',
-    sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+    secure: env.isProduction,
+    sameSite: env.isProduction ? 'none' : 'lax',
     path: '/api/auth',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days, matches JWT_REFRESH_EXPIRY default
+    ...(expiresAt ? { expires: expiresAt } : {}),
   };
 }
 

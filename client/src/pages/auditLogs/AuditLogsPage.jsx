@@ -1,118 +1,113 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Search } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
 import { auditLogApi } from '../../api/auditLogApi';
 import useDebounce from '../../hooks/useDebounce';
-import Pagination from '../../components/Pagination';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import { Button, Card, PageHeader, DataTable, Badge, Input, Select, SearchInput, Toolbar, Avatar, NoResults } from '../../components/ui';
+import { formatDateTime, roleLabel } from '../../utils/format';
 
-const inputClass =
-  'rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const ENTITY_TYPES = ['User', 'Employee', 'Department', 'Designation', 'LeaveRequest', 'Payroll', 'Salary', 'Organization'];
 
-function formatDateTime(value) {
-  return new Date(value).toLocaleString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
+function actionTone(action = '') {
+  if (/DELETE|REJECT|DEACTIVATE/.test(action)) return 'danger';
+  if (/CREATE|APPROVE|ACTIVATE|GENERATE/.test(action)) return 'success';
+  if (/LOGIN|PASSWORD/.test(action)) return 'info';
+  return 'neutral';
 }
 
 export default function AuditLogsPage() {
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search);
-  const [actionFilter, setActionFilter] = useState('');
-  const [actions, setActions] = useState([]);
-  const [page, setPage] = useState(1);
+  const list = useListParams({ pageSize: 15, sort: '-createdAt', filters: { search: '', action: '', entityType: '', from: '', to: '' } });
+  const debouncedSearch = useDebounce(list.filters.search);
+  const queryParams = { ...list.params, search: debouncedSearch || undefined };
+  const logs = useApiQuery((signal) => auditLogApi.list(queryParams, { signal }), [JSON.stringify(queryParams)]);
+  const actions = useApiQuery((signal) => auditLogApi.actions({ signal }), []);
 
-  const [logs, setLogs] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [status, setStatus] = useState('loading');
-
-  useEffect(() => {
-    auditLogApi.actions().then(({ data }) => setActions(data.data));
-  }, []);
-
-  const fetchLogs = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await auditLogApi.list({
-        page,
-        limit: 15,
-        search: debouncedSearch || undefined,
-        action: actionFilter || undefined,
-      });
-      setLogs(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page, debouncedSearch, actionFilter]);
-
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, actionFilter]);
+  const columns = [
+    {
+      key: 'createdAt',
+      header: 'When',
+      sortKey: 'createdAt',
+      defaultDesc: true,
+      width: 180,
+      render: (log) => <span className="whitespace-nowrap text-slate-600 tabular dark:text-slate-300">{formatDateTime(log.createdAt)}</span>,
+    },
+    {
+      key: 'user',
+      header: 'User',
+      render: (log) => (
+        <div className="flex items-center gap-2">
+          <Avatar name={log.user?.email || 'System'} size={26} />
+          <div className="min-w-0">
+            <p className="truncate text-slate-800 dark:text-slate-100">{log.user?.email || 'System'}</p>
+            {log.user?.role && <p className="text-[11px] text-slate-400">{roleLabel(log.user.role)}</p>}
+          </div>
+        </div>
+      ),
+    },
+    { key: 'action', header: 'Action', sortKey: 'action', render: (log) => <Badge tone={actionTone(log.action)}>{log.action.replace(/_/g, ' ')}</Badge> },
+    { key: 'entityType', header: 'Entity', sortKey: 'entityType', render: (log) => log.entityType, className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'description', header: 'Description', primary: true, render: (log) => <span className="text-slate-700 dark:text-slate-200">{log.description || '—'}</span> },
+    { key: 'ipAddress', header: 'IP', render: (log) => <span className="font-mono text-xs text-slate-400">{log.ipAddress || '—'}</span>, hideOnMobile: true },
+  ];
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-white">Audit Logs</h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">A record of important actions taken across the system.</p>
+      <PageHeader title="Audit Logs" description="A record of important actions taken across the system." />
 
-      <div className="mb-4 flex flex-wrap gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search descriptions…"
-            className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          />
-        </div>
-        <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className={inputClass}>
+      <Toolbar
+        actions={
+          list.hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={list.resetFilters}>
+              Clear filters
+            </Button>
+          )
+        }
+      >
+        <SearchInput value={list.filters.search} onChange={(v) => list.setFilter('search', v)} placeholder="Search descriptions…" className="w-full sm:w-64" />
+        <Select value={list.filters.action} onChange={(e) => list.setFilter('action', e.target.value)} aria-label="Filter by action" className="w-full sm:w-52">
           <option value="">All actions</option>
-          {actions.map((a) => (
-            <option key={a} value={a}>{a}</option>
+          {(actions.data || []).map((a) => (
+            <option key={a} value={a}>
+              {a.replace(/_/g, ' ')}
+            </option>
           ))}
-        </select>
-      </div>
+        </Select>
+        <Select value={list.filters.entityType} onChange={(e) => list.setFilter('entityType', e.target.value)} aria-label="Filter by entity" className="w-full sm:w-44">
+          <option value="">All entities</option>
+          {ENTITY_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </Select>
+        <Input type="date" value={list.filters.from} max={list.filters.to || undefined} onChange={(e) => list.setFilter('from', e.target.value)} aria-label="From date" className="w-full sm:w-40" />
+        <Input type="date" value={list.filters.to} min={list.filters.from || undefined} onChange={(e) => list.setFilter('to', e.target.value)} aria-label="To date" className="w-full sm:w-40" />
+      </Toolbar>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {status === 'loading' && <Loading label="Loading audit logs…" />}
-        {status === 'error' && <ErrorState message="Failed to load audit logs." />}
-        {status === 'ready' && logs.length === 0 && (
-          <EmptyState title="No audit logs found" message="Try adjusting your search or filters." />
+      <Card>
+        {logs.status === 'ready' && logs.data?.length === 0 && (list.hasActiveFilters || debouncedSearch) ? (
+          <NoResults onClear={list.resetFilters} />
+        ) : (
+          <DataTable
+            caption="Audit logs"
+            columns={columns}
+            rows={logs.data || []}
+            status={logs.status}
+            isFetching={logs.isFetching}
+            error={logs.error}
+            onRetry={logs.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={logs.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={ScrollText}
+            emptyTitle="No activity recorded yet"
+            emptyMessage="Logins, approvals, payroll runs and other important actions will be listed here."
+            dense
+          />
         )}
-        {status === 'ready' && logs.length > 0 && (
-          <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Timestamp</th>
-                  <th className="px-4 py-3 font-medium">User</th>
-                  <th className="px-4 py-3 font-medium">Action</th>
-                  <th className="px-4 py-3 font-medium">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {logs.map((log) => (
-                  <tr key={log._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-500 dark:text-slate-400">{formatDateTime(log.createdAt)}</td>
-                    <td className="px-4 py-3">{log.user?.email || 'System'}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{log.description}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
-          </>
-        )}
-      </div>
+      </Card>
     </div>
   );
 }

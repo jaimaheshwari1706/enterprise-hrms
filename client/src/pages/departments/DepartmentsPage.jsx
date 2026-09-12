@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, Boxes } from 'lucide-react';
 import { departmentApi } from '../../api/departmentApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 import { useToast } from '../../hooks/useToast';
 import useDebounce from '../../hooks/useDebounce';
-import Button from '../../components/Button';
-import Pagination from '../../components/Pagination';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import { Button, IconButton, Select, SearchInput, Toolbar, Card, PageHeader, DataTable, StatusBadge, ConfirmDialog, NoResults } from '../../components/ui';
+import { formatDate, fullName } from '../../utils/format';
+import { getApiErrorMessage } from '../../utils/apiError';
 import DepartmentFormModal from './DepartmentFormModal';
 
 export default function DepartmentsPage() {
@@ -16,64 +17,45 @@ export default function DepartmentsPage() {
   const canManage = user?.role === 'HR_ADMIN' || user?.role === 'SUPER_ADMIN';
   const { showToast } = useToast();
 
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search);
-  const [page, setPage] = useState(1);
-  const [departments, setDepartments] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [status, setStatus] = useState('loading'); // loading | ready | error
+  const list = useListParams({ pageSize: 10, sort: 'name', filters: { search: '', status: '' } });
+  const debouncedSearch = useDebounce(list.filters.search);
+  const queryParams = { ...list.params, search: debouncedSearch || undefined };
+  const departments = useApiQuery((signal) => departmentApi.list(queryParams, { signal }), [JSON.stringify(queryParams)]);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingDept, setEditingDept] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-
+  const [formError, setFormError] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const fetchDepartments = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await departmentApi.list({ page, limit: 10, search: debouncedSearch || undefined });
-      setDepartments(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page, debouncedSearch]);
-
-  useEffect(() => {
-    fetchDepartments();
-  }, [fetchDepartments]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch]);
-
   const openCreateForm = () => {
     setEditingDept(null);
+    setFormError(null);
     setFormOpen(true);
   };
 
   const openEditForm = (dept) => {
     setEditingDept(dept);
+    setFormError(null);
     setFormOpen(true);
   };
 
   const handleFormSubmit = async (values) => {
     setSubmitting(true);
+    setFormError(null);
     try {
       if (editingDept) {
         await departmentApi.update(editingDept._id, values);
-        showToast('Department updated successfully');
+        showToast('Department updated');
       } else {
         await departmentApi.create(values);
-        showToast('Department created successfully');
+        showToast('Department created');
       }
       setFormOpen(false);
-      fetchDepartments();
+      departments.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Something went wrong', 'error');
+      setFormError(getApiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -83,105 +65,99 @@ export default function DepartmentsPage() {
     setDeleting(true);
     try {
       await departmentApi.remove(deleteTarget._id);
-      showToast('Department deleted successfully');
+      showToast('Department deleted');
       setDeleteTarget(null);
-      fetchDepartments();
+      departments.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Unable to delete department', 'error');
+      showToast(getApiErrorMessage(err, 'Unable to delete department.'), 'error');
     } finally {
       setDeleting(false);
     }
   };
 
+  const columns = [
+    {
+      key: 'name',
+      header: 'Department',
+      sortKey: 'name',
+      primary: true,
+      render: (dept) => (
+        <div className="min-w-0">
+          <p className="font-medium text-slate-900 dark:text-white">{dept.name}</p>
+          {dept.description && <p className="truncate text-xs text-slate-500 dark:text-slate-400">{dept.description}</p>}
+        </div>
+      ),
+    },
+    { key: 'code', header: 'Code', sortKey: 'code', render: (dept) => <span className="font-mono text-xs text-slate-600 dark:text-slate-300">{dept.code}</span> },
+    { key: 'head', header: 'Head', render: (dept) => (dept.head ? fullName(dept.head) : '—'), className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'createdAt', header: 'Created', sortKey: 'createdAt', render: (dept) => formatDate(dept.createdAt), className: 'text-slate-600 tabular dark:text-slate-300', hideOnMobile: true },
+    { key: 'status', header: 'Status', sortKey: 'status', render: (dept) => <StatusBadge status={dept.status} /> },
+    ...(canManage
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Actions</span>,
+            isActions: true,
+            align: 'right',
+            width: 96,
+            render: (dept) => (
+              <div className="flex items-center justify-end gap-0.5">
+                <IconButton label={`Edit ${dept.name}`} icon={Pencil} onClick={() => openEditForm(dept)} />
+                <IconButton label={`Delete ${dept.name}`} icon={Trash2} tone="danger" onClick={() => setDeleteTarget(dept)} />
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Departments</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Manage your organization's departments.</p>
-        </div>
-        {canManage && (
-          <Button onClick={openCreateForm}>
-            <Plus size={16} /> Add Department
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Departments"
+        description="Organize employees into departments."
+        actions={
+          canManage && (
+            <Button icon={Plus} onClick={openCreateForm}>
+              Add department
+            </Button>
+          )
+        }
+      />
 
-      <div className="mb-4">
-        <div className="relative max-w-xs">
-          <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search departments…"
-            className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      <Toolbar>
+        <SearchInput value={list.filters.search} onChange={(v) => list.setFilter('search', v)} placeholder="Search by name or code…" className="w-full sm:w-72" />
+        <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-36">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </Select>
+      </Toolbar>
+
+      <Card>
+        {departments.status === 'ready' && departments.data?.length === 0 && (list.hasActiveFilters || debouncedSearch) ? (
+          <NoResults onClear={list.resetFilters} />
+        ) : (
+          <DataTable
+            caption="Departments"
+            columns={columns}
+            rows={departments.data || []}
+            status={departments.status}
+            isFetching={departments.isFetching}
+            error={departments.error}
+            onRetry={departments.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={departments.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={Boxes}
+            emptyTitle="No departments yet"
+            emptyMessage="Departments group employees and designations. Create the first one to get started."
+            emptyAction={canManage ? <Button icon={Plus} onClick={openCreateForm}>Add department</Button> : null}
           />
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {status === 'loading' && <Loading label="Loading departments…" />}
-        {status === 'error' && <ErrorState message="Failed to load departments. Please try again." />}
-        {status === 'ready' && departments.length === 0 && (
-          <EmptyState
-            title="No departments found"
-            message={search ? 'Try a different search term.' : 'Get started by adding your first department.'}
-          />
         )}
-
-        {status === 'ready' && departments.length > 0 && (
-          <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Code</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  {canManage && <th className="px-4 py-3 font-medium">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {departments.map((dept) => (
-                  <tr key={dept._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="px-4 py-3 font-medium">{dept.name}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{dept.code}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          dept.status === 'active'
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
-                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        {dept.status}
-                      </span>
-                    </td>
-                    {canManage && (
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => openEditForm(dept)}
-                            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget(dept)}
-                            className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
-          </>
-        )}
-      </div>
+      </Card>
 
       <DepartmentFormModal
         open={formOpen}
@@ -189,6 +165,7 @@ export default function DepartmentsPage() {
         onSubmit={handleFormSubmit}
         department={editingDept}
         submitting={submitting}
+        serverError={formError}
       />
 
       <ConfirmDialog
@@ -196,7 +173,7 @@ export default function DepartmentsPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         title="Delete department"
-        message={`Are you sure you want to delete "${deleteTarget?.name}"? This cannot be undone.`}
+        message={`"${deleteTarget?.name}" will be permanently deleted. This is only possible when no designations or employees are assigned to it.`}
         confirmLabel="Delete"
         loading={deleting}
       />

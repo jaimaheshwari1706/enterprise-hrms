@@ -1,10 +1,13 @@
 // Wraps ioredis so the rest of the app can call cache.get/set/del without
 // caring whether Redis is actually enabled. When REDIS_ENABLED=false (the
 // default for local dev), every method silently no-ops so the app still
-// works correctly — just without caching.
+// works correctly — just without caching (and with per-process rate
+// limiting, see middleware/rateLimiter).
 const env = require('./env');
+const logger = require('../utils/logger');
 
 let client = null;
+let rawClient = null;
 
 function buildNoopClient() {
   return {
@@ -15,6 +18,30 @@ function buildNoopClient() {
   };
 }
 
+// The underlying ioredis connection (or null when Redis is disabled), for
+// code that needs commands beyond the cache API — the rate-limit store.
+function getRawRedis() {
+  if (!env.redis.enabled) return null;
+  if (rawClient) return rawClient;
+
+  const Redis = require('ioredis');
+  rawClient = new Redis(env.redis.url, {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    // Don't queue commands while disconnected: callers get an immediate
+    // error and fall back (cache miss / rate-limit fail-open) instead of
+    // hanging requests until the connection comes back.
+    enableOfflineQueue: false,
+  });
+
+  rawClient.on('error', (err) => {
+    logger.error('Redis connection error (caching/rate-limit degraded for this request)', { error: err });
+  });
+  rawClient.on('ready', () => logger.info('Redis connected'));
+  rawClient.connect().catch(() => {});
+  return rawClient;
+}
+
 function getRedisClient() {
   if (client) return client;
 
@@ -23,14 +50,7 @@ function getRedisClient() {
     return client;
   }
 
-  const Redis = require('ioredis');
-  const redis = new Redis(env.redis.url, { lazyConnect: true, maxRetriesPerRequest: 1 });
-
-  redis.on('error', (err) => {
-    console.error('[redis] connection error (caching disabled for this request):', err.message);
-  });
-
-  redis.connect().then(() => console.log('[redis] connected')).catch(() => {});
+  const redis = getRawRedis();
 
   client = {
     enabled: true,
@@ -62,3 +82,4 @@ function getRedisClient() {
 }
 
 module.exports = getRedisClient;
+module.exports.getRawRedis = getRawRedis;

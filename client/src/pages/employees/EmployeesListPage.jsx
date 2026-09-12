@@ -1,38 +1,49 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Eye, Power, Download } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Plus, Eye, Power, Download, Pencil, MoreHorizontal, Users } from 'lucide-react';
 import { employeeApi } from '../../api/employeeApi';
 import { departmentApi } from '../../api/departmentApi';
 import { exportApi } from '../../api/exportApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 import { useToast } from '../../hooks/useToast';
 import useDebounce from '../../hooks/useDebounce';
-import Button from '../../components/Button';
-import Avatar from '../../components/Avatar';
-import StatusBadge from '../../components/StatusBadge';
-import Pagination from '../../components/Pagination';
-import ConfirmDialog from '../../components/ConfirmDialog';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import {
+  Button, IconButton, Select, SearchInput, Toolbar, Card, PageHeader, DataTable, Avatar, StatusBadge, ConfirmDialog, Dropdown, NoResults, FormField, Input,
+} from '../../components/ui';
+import { formatDate, fullName, todayInputValue } from '../../utils/format';
+import { getApiErrorMessage } from '../../utils/apiError';
+
+const EMPLOYMENT_TYPES = ['Full-Time', 'Part-Time', 'Contract', 'Intern'];
 
 export default function EmployeesListPage() {
   const user = useSelector(selectCurrentUser);
   const canManage = user?.role === 'HR_ADMIN' || user?.role === 'SUPER_ADMIN';
+  const isManager = user?.role === 'MANAGER';
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search);
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(1);
+  const list = useListParams({
+    pageSize: 10,
+    sort: '-createdAt',
+    filters: {
+      search: '',
+      department: searchParams.get('department') || '',
+      status: searchParams.get('status') || '',
+      employmentType: '',
+    },
+  });
+  const debouncedSearch = useDebounce(list.filters.search);
+  const queryParams = { ...list.params, search: debouncedSearch || undefined };
 
-  const [employees, setEmployees] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [status, setStatus] = useState('loading');
+  const employees = useApiQuery((signal) => employeeApi.list(queryParams, { signal }), [JSON.stringify(queryParams)]);
+  const departments = useApiQuery((signal) => departmentApi.list({ limit: 100, status: 'active', sort: 'name' }, { signal }), []);
 
   const [statusTarget, setStatusTarget] = useState(null);
+  const [exitDate, setExitDate] = useState('');
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -41,195 +52,192 @@ export default function EmployeesListPage() {
     try {
       await exportApi.employees({
         search: debouncedSearch || undefined,
-        department: departmentFilter || undefined,
-        status: statusFilter || undefined,
+        department: list.filters.department || undefined,
+        status: list.filters.status || undefined,
       });
-    } catch {
-      showToast('Failed to export employees', 'error');
+      showToast('Employee export downloaded');
+    } catch (err) {
+      showToast(getApiErrorMessage(err, 'Unable to export employees.'), 'error');
     } finally {
       setExporting(false);
     }
   };
 
-  useEffect(() => {
-    departmentApi.list({ limit: 100, status: 'active' }).then(({ data }) => setDepartments(data.data));
-  }, []);
-
-  const fetchEmployees = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await employeeApi.list({
-        page,
-        limit: 10,
-        search: debouncedSearch || undefined,
-        department: departmentFilter || undefined,
-        status: statusFilter || undefined,
-      });
-      setEmployees(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page, debouncedSearch, departmentFilter, statusFilter]);
-
-  useEffect(() => {
-    fetchEmployees();
-  }, [fetchEmployees]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, departmentFilter, statusFilter]);
-
   const handleToggleStatus = async () => {
     setTogglingStatus(true);
     const nextStatus = statusTarget.status === 'active' ? 'inactive' : 'active';
     try {
-      await employeeApi.updateStatus(statusTarget._id, nextStatus);
-      showToast(`Employee ${nextStatus === 'active' ? 'activated' : 'deactivated'} successfully`);
+      await employeeApi.updateStatus(statusTarget._id, nextStatus, nextStatus === 'inactive' ? exitDate : undefined);
+      showToast(`${fullName(statusTarget)} ${nextStatus === 'active' ? 'activated' : 'deactivated'}`);
       setStatusTarget(null);
-      fetchEmployees();
+      employees.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Unable to update status', 'error');
+      showToast(getApiErrorMessage(err, 'Unable to update status.'), 'error');
     } finally {
       setTogglingStatus(false);
     }
   };
 
+  const columns = [
+    {
+      key: 'name',
+      header: 'Employee',
+      sortKey: 'firstName',
+      primary: true,
+      render: (emp) => (
+        <div className="flex items-center gap-3">
+          <Avatar src={emp.profileImageUrl} name={fullName(emp)} />
+          <div className="min-w-0">
+            <Link to={`/employees/${emp._id}`} className="block truncate font-medium text-slate-900 hover:underline dark:text-white">
+              {fullName(emp)}
+            </Link>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-mono">{emp.employeeId}</span> · {emp.email}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'department', header: 'Department', render: (emp) => emp.department?.name || '—', className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'designation', header: 'Designation', render: (emp) => emp.designation?.name || '—', className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'employmentType', header: 'Type', render: (emp) => emp.employmentType || '—', className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'joiningDate', header: 'Joined', sortKey: 'joiningDate', render: (emp) => formatDate(emp.joiningDate), className: 'text-slate-600 tabular dark:text-slate-300' },
+    { key: 'status', header: 'Status', sortKey: 'status', render: (emp) => <StatusBadge status={emp.status} /> },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isActions: true,
+      align: 'right',
+      width: 96,
+      render: (emp) => (
+        <div className="flex items-center justify-end gap-0.5">
+          <IconButton label={`View ${fullName(emp)}`} icon={Eye} onClick={() => navigate(`/employees/${emp._id}`)} />
+          {canManage && (
+            <Dropdown
+              trigger={({ ref, toggle, ...aria }) => <IconButton ref={ref} label="More actions" icon={MoreHorizontal} onClick={toggle} {...aria} />}
+              items={[
+                { label: 'Edit details', icon: Pencil, onSelect: () => navigate(`/employees/${emp._id}/edit`) },
+                { type: 'separator' },
+                {
+                  label: emp.status === 'active' ? 'Deactivate' : 'Activate',
+                  icon: Power,
+                  tone: emp.status === 'active' ? 'danger' : undefined,
+                  disabled: emp._id === user?.employee?._id,
+                  onSelect: () => {
+                    setExitDate(todayInputValue());
+                    setStatusTarget(emp);
+                  },
+                },
+              ]}
+            />
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  const title = isManager ? 'My Team' : canManage ? 'Employees' : 'Directory';
+  const description = isManager ? 'Employees reporting to you.' : canManage ? "Manage your organization's workforce." : 'Find colleagues across the organization.';
+
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-            {user?.role === 'MANAGER' ? 'My Team' : 'Employees'}
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            {user?.role === 'MANAGER' ? 'Employees reporting to you.' : 'Manage your organization\'s workforce.'}
-          </p>
-        </div>
-        {canManage && (
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleExport} disabled={exporting}>
-              <Download size={16} /> {exporting ? 'Exporting…' : 'Export'}
-            </Button>
-            <Button onClick={() => navigate('/employees/new')}>
-              <Plus size={16} /> Add Employee
-            </Button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title={title}
+        description={description}
+        meta={
+          employees.pagination && (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-medium text-slate-700 tabular dark:text-slate-200">{employees.pagination.total}</span> {employees.pagination.total === 1 ? 'employee' : 'employees'}
+              {list.hasActiveFilters || debouncedSearch ? ' match the current filters' : ''}
+            </p>
+          )
+        }
+        actions={
+          canManage && (
+            <>
+              <Button variant="secondary" icon={Download} onClick={handleExport} loading={exporting}>
+                Export
+              </Button>
+              <Button icon={Plus} onClick={() => navigate('/employees/new')}>
+                Add employee
+              </Button>
+            </>
+          )
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, ID, or email…"
-            className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          />
-        </div>
-        <select
-          value={departmentFilter}
-          onChange={(e) => setDepartmentFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-        >
+      <Toolbar>
+        <SearchInput value={list.filters.search} onChange={(v) => list.setFilter('search', v)} placeholder="Search by name, ID or email…" className="w-full sm:w-72" />
+        <Select value={list.filters.department} onChange={(e) => list.setFilter('department', e.target.value)} aria-label="Filter by department" className="w-full sm:w-48">
           <option value="">All departments</option>
-          {departments.map((d) => (
+          {(departments.data || []).map((d) => (
             <option key={d._id} value={d._id}>
               {d.name}
             </option>
           ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-        >
+        </Select>
+        <Select value={list.filters.employmentType} onChange={(e) => list.setFilter('employmentType', e.target.value)} aria-label="Filter by employment type" className="w-full sm:w-40">
+          <option value="">All types</option>
+          {EMPLOYMENT_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </Select>
+        <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-36">
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
-        </select>
-      </div>
+        </Select>
+      </Toolbar>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {status === 'loading' && <Loading label="Loading employees…" />}
-        {status === 'error' && <ErrorState message="Failed to load employees. Please try again." />}
-        {status === 'ready' && employees.length === 0 && (
-          <EmptyState
-            title="No employees found"
-            message={search ? 'Try a different search term.' : 'Get started by adding your first employee.'}
+      <Card>
+        {employees.status === 'ready' && employees.data?.length === 0 && (list.hasActiveFilters || debouncedSearch) ? (
+          <NoResults onClear={list.resetFilters} />
+        ) : (
+          <DataTable
+            caption="Employees"
+            columns={columns}
+            rows={employees.data || []}
+            status={employees.status}
+            isFetching={employees.isFetching}
+            error={employees.error}
+            onRetry={employees.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={employees.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={Users}
+            emptyTitle={isManager ? 'No direct reports yet' : 'No employees yet'}
+            emptyMessage={isManager ? 'Employees whose manager is set to you will appear here.' : 'Add your first employee to get started.'}
+            emptyAction={canManage ? <Button icon={Plus} onClick={() => navigate('/employees/new')}>Add employee</Button> : null}
           />
         )}
-
-        {status === 'ready' && employees.length > 0 && (
-          <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Department</th>
-                  <th className="px-4 py-3 font-medium">Designation</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {employees.map((emp) => (
-                  <tr key={emp._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Avatar src={emp.profileImageUrl} name={`${emp.firstName} ${emp.lastName}`} />
-                        <div>
-                          <p className="font-medium">{emp.firstName} {emp.lastName}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{emp.employeeId} · {emp.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{emp.department?.name || '—'}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{emp.designation?.name || '—'}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={emp.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        <Link
-                          to={`/employees/${emp._id}`}
-                          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                        >
-                          <Eye size={15} />
-                        </Link>
-                        {canManage && (
-                          <button
-                            onClick={() => setStatusTarget(emp)}
-                            title={emp.status === 'active' ? 'Deactivate' : 'Activate'}
-                            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                          >
-                            <Power size={15} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
-          </>
-        )}
-      </div>
+      </Card>
 
       <ConfirmDialog
         open={Boolean(statusTarget)}
         onClose={() => setStatusTarget(null)}
         onConfirm={handleToggleStatus}
+        tone={statusTarget?.status === 'active' ? 'danger' : 'info'}
         title={statusTarget?.status === 'active' ? 'Deactivate employee' : 'Activate employee'}
-        message={`Are you sure you want to ${statusTarget?.status === 'active' ? 'deactivate' : 'activate'} ${statusTarget?.firstName} ${statusTarget?.lastName}? ${
-          statusTarget?.status === 'active' ? 'Their login access will be revoked.' : 'Their login access will be restored.'
-        }`}
+        message={
+          statusTarget
+            ? `${fullName(statusTarget)} will ${statusTarget.status === 'active' ? 'lose access to the HRMS immediately and any open sessions will be signed out.' : 'regain access to the HRMS with their existing credentials.'}`
+            : ''
+        }
         confirmLabel={statusTarget?.status === 'active' ? 'Deactivate' : 'Activate'}
         loading={togglingStatus}
-      />
+      >
+        {statusTarget?.status === 'active' && (
+          <div className="mt-3">
+            <FormField label="Last working day" hint="Used to pro-rate the final month's payroll when the payroll policy enables it.">
+              <Input type="date" value={exitDate} min={statusTarget.joiningDate?.slice(0, 10)} onChange={(e) => setExitDate(e.target.value)} />
+            </FormField>
+          </div>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

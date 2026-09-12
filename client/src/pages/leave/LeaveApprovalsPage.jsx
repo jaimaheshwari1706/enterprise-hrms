@@ -1,79 +1,64 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Check, X, Download } from 'lucide-react';
+import { useState } from 'react';
+import { Check, X, Download, CheckSquare } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import { Link, useSearchParams } from 'react-router-dom';
 import { leaveApi } from '../../api/leaveApi';
+import { employeeApi } from '../../api/employeeApi';
 import { exportApi } from '../../api/exportApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 import { useToast } from '../../hooks/useToast';
-import Avatar from '../../components/Avatar';
-import StatusBadge from '../../components/StatusBadge';
-import Pagination from '../../components/Pagination';
-import Modal from '../../components/Modal';
-import Button from '../../components/Button';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import { Button, IconButton, Card, PageHeader, DataTable, StatusBadge, Avatar, Modal, Select, Textarea, FormField, Toolbar, Tabs, NoResults, Alert } from '../../components/ui';
+import { formatDate, fullName } from '../../utils/format';
+import { getApiErrorMessage } from '../../utils/apiError';
 
-function formatDate(value) {
-  return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-const inputClass =
-  'rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const STATUS_TABS = [
+  { value: 'Pending', label: 'Pending' },
+  { value: 'Approved', label: 'Approved' },
+  { value: 'Rejected', label: 'Rejected' },
+  { value: 'Cancelled', label: 'Cancelled' },
+  { value: '', label: 'All' },
+];
 
 export default function LeaveApprovalsPage() {
   const { showToast } = useToast();
   const user = useSelector(selectCurrentUser);
   const canExport = user?.role === 'HR_ADMIN' || user?.role === 'SUPER_ADMIN';
+  const [searchParams] = useSearchParams();
 
-  const [statusFilter, setStatusFilter] = useState('Pending');
-  const [page, setPage] = useState(1);
+  const list = useListParams({ pageSize: 10, sort: '-createdAt', filters: { status: searchParams.get('status') ?? 'Pending', employee: '' } });
+  const leaves = useApiQuery((signal) => leaveApi.list(list.params, { signal }), [JSON.stringify(list.params)]);
+  const employees = useApiQuery((signal) => employeeApi.options({ signal }), []);
+
   const [exporting, setExporting] = useState(false);
+  const [decisionModal, setDecisionModal] = useState(null); // { leave, decision }
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [decisionError, setDecisionError] = useState(null);
 
   const handleExport = async () => {
     setExporting(true);
     try {
-      await exportApi.leaves({ status: statusFilter || undefined });
-    } catch {
-      showToast('Failed to export leave requests', 'error');
+      await exportApi.leaves({ status: list.filters.status || undefined, employee: list.filters.employee || undefined });
+      showToast('Leave export downloaded');
+    } catch (err) {
+      showToast(getApiErrorMessage(err, 'Unable to export leave requests.'), 'error');
     } finally {
       setExporting(false);
     }
   };
 
-  const [leaves, setLeaves] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [status, setStatus] = useState('loading');
-
-  const [decisionModal, setDecisionModal] = useState(null); // { leave, decision }
-  const [comment, setComment] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const fetchLeaves = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await leaveApi.list({ page, limit: 10, status: statusFilter || undefined });
-      setLeaves(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page, statusFilter]);
-
-  useEffect(() => {
-    fetchLeaves();
-  }, [fetchLeaves]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [statusFilter]);
-
   const openDecision = (leave, decision) => {
     setComment('');
+    setDecisionError(null);
     setDecisionModal({ leave, decision });
   };
 
-  const submitDecision = async () => {
+  const submitDecision = async (event) => {
+    event?.preventDefault();
     setSubmitting(true);
+    setDecisionError(null);
     try {
       if (decisionModal.decision === 'Approved') {
         await leaveApi.approve(decisionModal.leave._id, comment);
@@ -83,135 +68,170 @@ export default function LeaveApprovalsPage() {
         showToast('Leave request rejected');
       }
       setDecisionModal(null);
-      fetchLeaves();
+      leaves.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to record decision', 'error');
+      setDecisionError(getApiErrorMessage(err, 'Unable to record the decision.'));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const columns = [
+    {
+      key: 'employee',
+      header: 'Employee',
+      primary: true,
+      render: (leave) => (
+        <Link to={`/employees/${leave.employee?._id}`} className="flex items-center gap-3 hover:underline">
+          <Avatar src={leave.employee?.profileImageUrl} name={fullName(leave.employee)} size={30} />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-slate-900 dark:text-white">{fullName(leave.employee) || 'Unknown'}</p>
+            <p className="truncate font-mono text-xs text-slate-500 dark:text-slate-400">{leave.employee?.employeeId}</p>
+          </div>
+        </Link>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'Type & reason',
+      render: (leave) => (
+        <div className="min-w-0">
+          <p className="text-slate-800 dark:text-slate-100">{leave.leaveType?.name}</p>
+          <p className="max-w-xs truncate text-xs text-slate-500 dark:text-slate-400" title={leave.reason}>
+            {leave.reason}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'dates',
+      header: 'Dates',
+      sortKey: 'startDate',
+      render: (leave) => (
+        <span className="tabular">
+          {formatDate(leave.startDate)} – {formatDate(leave.endDate)}
+        </span>
+      ),
+      className: 'text-slate-600 dark:text-slate-300',
+    },
+    { key: 'days', header: 'Days', sortKey: 'days', align: 'right', render: (leave) => leave.days, className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'requested', header: 'Requested', sortKey: 'createdAt', defaultDesc: true, render: (leave) => formatDate(leave.createdAt), className: 'text-slate-500 tabular dark:text-slate-400', hideOnMobile: true },
+    {
+      key: 'status',
+      header: 'Status',
+      sortKey: 'status',
+      render: (leave) => (
+        <div>
+          <StatusBadge status={leave.status} />
+          {leave.approver && leave.status !== 'Pending' && <p className="mt-1 text-[11px] text-slate-400">by {fullName(leave.approver)}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isActions: true,
+      align: 'right',
+      width: 96,
+      render: (leave) =>
+        leave.status === 'Pending' ? (
+          <div className="flex items-center justify-end gap-0.5">
+            <IconButton label={`Approve request from ${fullName(leave.employee)}`} icon={Check} tone="success" onClick={() => openDecision(leave, 'Approved')} />
+            <IconButton label={`Reject request from ${fullName(leave.employee)}`} icon={X} tone="danger" onClick={() => openDecision(leave, 'Rejected')} />
+          </div>
+        ) : null,
+    },
+  ];
+
+  const isApprove = decisionModal?.decision === 'Approved';
+
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-white">Leave Approvals</h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Review and act on leave requests from your team.</p>
+      <PageHeader
+        title="Leave Approvals"
+        description={user?.role === 'MANAGER' ? 'Review requests from your direct reports.' : 'Review leave requests across the organization.'}
+        actions={
+          canExport && (
+            <Button variant="secondary" icon={Download} onClick={handleExport} loading={exporting}>
+              Export
+            </Button>
+          )
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={inputClass}>
-          <option value="Pending">Pending</option>
-          <option value="Approved">Approved</option>
-          <option value="Rejected">Rejected</option>
-          <option value="Cancelled">Cancelled</option>
-          <option value="">All</option>
-        </select>
-        {canExport && (
-          <Button variant="secondary" onClick={handleExport} disabled={exporting}>
-            <Download size={16} /> {exporting ? 'Exporting…' : 'Export'}
-          </Button>
-        )}
-      </div>
+      <Tabs tabs={STATUS_TABS} value={list.filters.status} onChange={(v) => list.setFilter('status', v)} className="mb-4" />
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {status === 'loading' && <Loading label="Loading leave requests…" />}
-        {status === 'error' && <ErrorState message="Failed to load leave requests." />}
-        {status === 'ready' && leaves.length === 0 && (
-          <EmptyState title="No leave requests found" message="There's nothing to review right now." />
+      <Toolbar>
+        <Select value={list.filters.employee} onChange={(e) => list.setFilter('employee', e.target.value)} aria-label="Filter by employee" className="w-full sm:w-64">
+          <option value="">All employees</option>
+          {(employees.data || []).map((e) => (
+            <option key={e._id} value={e._id}>
+              {fullName(e)} ({e.employeeId})
+            </option>
+          ))}
+        </Select>
+      </Toolbar>
+
+      <Card>
+        {leaves.status === 'ready' && leaves.data?.length === 0 && list.filters.employee ? (
+          <NoResults onClear={() => list.setFilter('employee', '')} />
+        ) : (
+          <DataTable
+            caption="Leave requests"
+            columns={columns}
+            rows={leaves.data || []}
+            status={leaves.status}
+            isFetching={leaves.isFetching}
+            error={leaves.error}
+            onRetry={leaves.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={leaves.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={CheckSquare}
+            emptyTitle={list.filters.status === 'Pending' ? 'Nothing to review' : 'No leave requests'}
+            emptyMessage={list.filters.status === 'Pending' ? 'All requests have been actioned. New ones will appear here.' : 'No requests match this status.'}
+          />
         )}
-        {status === 'ready' && leaves.length > 0 && (
-          <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Dates</th>
-                  <th className="px-4 py-3 font-medium">Days</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {leaves.map((leave) => (
-                  <tr key={leave._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Avatar
-                          src={leave.employee?.profileImageUrl}
-                          name={`${leave.employee?.firstName} ${leave.employee?.lastName}`}
-                          size={28}
-                        />
-                        <span>{leave.employee?.firstName} {leave.employee?.lastName}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{leave.leaveType?.name}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                      {formatDate(leave.startDate)} – {formatDate(leave.endDate)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{leave.days}</td>
-                    <td className="px-4 py-3"><StatusBadge status={leave.status} /></td>
-                    <td className="px-4 py-3">
-                      {leave.status === 'Pending' && (
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => openDecision(leave, 'Approved')}
-                            className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-                            title="Approve"
-                          >
-                            <Check size={16} />
-                          </button>
-                          <button
-                            onClick={() => openDecision(leave, 'Rejected')}
-                            className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
-                            title="Reject"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
-          </>
-        )}
-      </div>
+      </Card>
 
       <Modal
         open={Boolean(decisionModal)}
-        onClose={() => setDecisionModal(null)}
-        title={decisionModal?.decision === 'Approved' ? 'Approve leave request' : 'Reject leave request'}
+        onClose={submitting ? undefined : () => setDecisionModal(null)}
+        title={isApprove ? 'Approve leave request' : 'Reject leave request'}
+        size="sm"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDecisionModal(null)} disabled={submitting}>
               Cancel
             </Button>
-            <Button
-              variant={decisionModal?.decision === 'Approved' ? 'primary' : 'danger'}
-              onClick={submitDecision}
-              disabled={submitting}
-            >
-              {submitting ? 'Saving…' : decisionModal?.decision === 'Approved' ? 'Approve' : 'Reject'}
+            <Button type="submit" form="decision-form" variant={isApprove ? 'success' : 'danger'} loading={submitting} icon={isApprove ? Check : X}>
+              {isApprove ? 'Approve' : 'Reject'}
             </Button>
           </>
         }
       >
-        <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
-          {decisionModal?.leave?.employee?.firstName} {decisionModal?.leave?.employee?.lastName} requested{' '}
-          {decisionModal?.leave?.leaveType?.name} for {decisionModal?.leave?.days} day
-          {decisionModal?.leave?.days > 1 ? 's' : ''}.
-        </p>
-        <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-          Comment (optional)
-        </label>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          rows={3}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          placeholder="Add a note for the employee (optional)"
-        />
+        <form id="decision-form" onSubmit={submitDecision} className="space-y-4">
+          {decisionError && <Alert tone="danger">{decisionError}</Alert>}
+          {decisionModal && (
+            <dl className="grid grid-cols-3 gap-y-1.5 rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
+              <dt className="text-slate-500 dark:text-slate-400">Employee</dt>
+              <dd className="col-span-2 font-medium text-slate-800 dark:text-slate-100">{fullName(decisionModal.leave.employee)}</dd>
+              <dt className="text-slate-500 dark:text-slate-400">Type</dt>
+              <dd className="col-span-2 text-slate-800 dark:text-slate-100">{decisionModal.leave.leaveType?.name}</dd>
+              <dt className="text-slate-500 dark:text-slate-400">Dates</dt>
+              <dd className="col-span-2 text-slate-800 tabular dark:text-slate-100">
+                {formatDate(decisionModal.leave.startDate)} – {formatDate(decisionModal.leave.endDate)} · {decisionModal.leave.days} day{decisionModal.leave.days === 1 ? '' : 's'}
+              </dd>
+              <dt className="text-slate-500 dark:text-slate-400">Reason</dt>
+              <dd className="col-span-2 text-slate-800 dark:text-slate-100">{decisionModal.leave.reason}</dd>
+            </dl>
+          )}
+          <FormField label="Note for the employee" hint="Optional — included in their notification">
+            <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={3} maxLength={500} placeholder={isApprove ? 'e.g. Enjoy your time off' : 'e.g. Please pick dates after the release'} />
+          </FormField>
+        </form>
       </Modal>
     </div>
   );

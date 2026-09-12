@@ -7,6 +7,9 @@ const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
 
 const env = require('./config/env');
+const logger = require('./utils/logger');
+const requestId = require('./middleware/requestId');
+const { apiLimiter } = require('./middleware/rateLimiter');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -16,7 +19,9 @@ const app = express();
 if (env.trustProxy) {
   app.set('trust proxy', env.trustProxy);
 }
+app.disable('x-powered-by');
 
+app.use(requestId);
 app.use(helmet());
 app.use(
   cors({
@@ -29,16 +34,27 @@ app.use(
       // next(err), turning every disallowed-origin probe into a logged 500.
       // Omitting the Access-Control-Allow-Origin header already makes the
       // browser block the response — that's the actual enforcement.
-      console.warn(`[cors] blocked request from disallowed origin: ${origin}`);
+      logger.warn('CORS: blocked request from disallowed origin', { origin });
       return callback(null, false);
     },
     credentials: true,
+    exposedHeaders: ['X-Request-Id', 'Content-Disposition'],
   })
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// The API only ever receives small JSON documents; file uploads go through
+// multer with their own 2MB cap. A tight limit keeps a hostile client from
+// forcing the process to buffer large bodies.
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 app.use(cookieParser());
-app.use(morgan(env.nodeEnv === 'development' ? 'dev' : 'combined'));
+
+// Request logging: skip the health probes (Render polls them constantly)
+// so real traffic stays readable.
+app.use(
+  morgan(env.isProduction ? 'combined' : 'dev', {
+    skip: (req) => req.path === '/api/health' || req.path === '/api/ready',
+  })
+);
 
 // Liveness — process is up. Always 200; does not depend on any dependency.
 app.get('/api/health', (req, res) => {
@@ -57,8 +73,7 @@ app.get('/api/ready', (req, res) => {
   });
 });
 
-// Feature routes are mounted here as each phase builds them.
-app.use('/api', require('./routes'));
+app.use('/api', apiLimiter, require('./routes'));
 
 app.use(notFoundHandler);
 app.use(errorHandler);

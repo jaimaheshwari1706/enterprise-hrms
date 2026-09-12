@@ -1,305 +1,369 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Plus, Settings, Download } from 'lucide-react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Plus, Settings2, Download, Wallet, ArrowRight, AlertCircle, ListChecks, BadgeIndianRupee, FileText } from 'lucide-react';
 import { payrollApi } from '../../api/payrollApi';
 import { employeeApi } from '../../api/employeeApi';
 import { exportApi } from '../../api/exportApi';
 import { useToast } from '../../hooks/useToast';
-import Button from '../../components/Button';
-import Avatar from '../../components/Avatar';
-import StatusBadge from '../../components/StatusBadge';
-import Pagination from '../../components/Pagination';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import {
+  Button, IconButton, Card, PageHeader, DataTable, StatusBadge, Avatar, Input, Select, Toolbar, Tabs, ConfirmDialog, Badge, NoResults, Alert,
+} from '../../components/ui';
+import { formatCurrency, formatMonth, fullName } from '../../utils/format';
+import { getApiErrorMessage } from '../../utils/apiError';
 import GeneratePayrollModal from './GeneratePayrollModal';
 import SalaryConfigModal from './SalaryConfigModal';
-
-function currency(value) {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
-}
-
-const inputClass =
-  'rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 
 const STATUS_FLOW = { Draft: 'Processed', Processed: 'Paid' };
 
 export default function PayrollManagementPage() {
-  const { showToast } = useToast();
-  const [tab, setTab] = useState('records'); // records | salaries
-
-  const [employees, setEmployees] = useState([]);
-  useEffect(() => {
-    employeeApi.list({ limit: 200, status: 'active' }).then(({ data }) => setEmployees(data.data));
-  }, []);
+  const [tab, setTab] = useState('records');
+  const employees = useApiQuery((signal) => employeeApi.options({ signal }), []);
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Payroll Management</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Generate payroll and configure employee salaries.</p>
-        </div>
-      </div>
-
-      <div className="mb-4 flex gap-1 border-b border-slate-200 dark:border-slate-800">
-        {['records', 'salaries'].map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`border-b-2 px-3 py-2 text-sm font-medium capitalize transition-colors ${
-              tab === t
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-            }`}
-          >
-            {t === 'records' ? 'Payroll Records' : 'Salary Configuration'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'records' && <PayrollRecordsTab employees={employees} showToast={showToast} />}
-      {tab === 'salaries' && <SalaryConfigTab employees={employees} showToast={showToast} />}
+      <PageHeader title="Payroll Management" description="Generate monthly payroll and maintain salary structures." />
+      <Tabs
+        tabs={[
+          { value: 'records', label: 'Payroll records', icon: ListChecks },
+          { value: 'salaries', label: 'Salary structures', icon: BadgeIndianRupee },
+        ]}
+        value={tab}
+        onChange={setTab}
+        className="mb-5"
+      />
+      {tab === 'records' ? <PayrollRecordsTab employees={employees.data || []} /> : <SalaryConfigTab />}
     </div>
   );
 }
 
-function PayrollRecordsTab({ employees, showToast }) {
-  const [monthFilter, setMonthFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('');
-  const [page, setPage] = useState(1);
-
-  const [records, setRecords] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [status, setStatus] = useState('loading');
+function PayrollRecordsTab({ employees }) {
+  const { showToast } = useToast();
+  const list = useListParams({ pageSize: 10, sort: '-month', filters: { month: '', status: '', employee: '' } });
+  const records = useApiQuery((signal) => payrollApi.list(list.params, { signal }), [JSON.stringify(list.params)]);
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState(null);
+  const [generateResult, setGenerateResult] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [advanceTarget, setAdvanceTarget] = useState(null);
+  const [advancing, setAdvancing] = useState(false);
 
   const handleExport = async () => {
     setExporting(true);
     try {
       await exportApi.payroll({
-        month: monthFilter || undefined,
-        status: statusFilter || undefined,
-        employee: employeeFilter || undefined,
+        month: list.filters.month || undefined,
+        status: list.filters.status || undefined,
+        employee: list.filters.employee || undefined,
       });
-    } catch {
-      showToast('Failed to export payroll', 'error');
+      showToast('Payroll export downloaded');
+    } catch (err) {
+      showToast(getApiErrorMessage(err, 'Unable to export payroll.'), 'error');
     } finally {
       setExporting(false);
     }
   };
 
-  const fetchRecords = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await payrollApi.list({
-        page,
-        limit: 10,
-        month: monthFilter || undefined,
-        status: statusFilter || undefined,
-        employee: employeeFilter || undefined,
-      });
-      setRecords(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page, monthFilter, statusFilter, employeeFilter]);
-
-  useEffect(() => {
-    fetchRecords();
-  }, [fetchRecords]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [monthFilter, statusFilter, employeeFilter]);
-
   const handleGenerate = async (payload) => {
     setGenerating(true);
+    setGenerateError(null);
     try {
       const { data } = await payrollApi.generate(payload);
-      showToast(data.message);
       setGenerateOpen(false);
-      fetchRecords();
+      setGenerateResult({ month: payload.month, ...data.data });
+      showToast(data.message);
+      records.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to generate payroll', 'error');
+      setGenerateError(getApiErrorMessage(err, 'Unable to generate payroll.'));
     } finally {
       setGenerating(false);
     }
   };
 
-  const advanceStatus = async (record) => {
-    const nextStatus = STATUS_FLOW[record.status];
-    if (!nextStatus) return;
+  const advanceStatus = async () => {
+    const nextStatus = STATUS_FLOW[advanceTarget.status];
+    setAdvancing(true);
     try {
-      await payrollApi.updateStatus(record._id, nextStatus);
+      await payrollApi.updateStatus(advanceTarget._id, nextStatus);
       showToast(`Marked as ${nextStatus}`);
-      fetchRecords();
+      setAdvanceTarget(null);
+      records.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to update status', 'error');
+      showToast(getApiErrorMessage(err, 'Unable to update status.'), 'error');
+    } finally {
+      setAdvancing(false);
     }
   };
 
+  const columns = [
+    {
+      key: 'employee',
+      header: 'Employee',
+      primary: true,
+      render: (rec) => (
+        <Link to={`/employees/${rec.employee?._id}`} className="flex items-center gap-3 hover:underline">
+          <Avatar src={rec.employee?.profileImageUrl} name={fullName(rec.employee)} size={30} />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-slate-900 dark:text-white">{fullName(rec.employee) || 'Unknown'}</p>
+            <p className="truncate font-mono text-xs text-slate-500 dark:text-slate-400">{rec.employee?.employeeId}</p>
+          </div>
+        </Link>
+      ),
+    },
+    { key: 'month', header: 'Month', sortKey: 'month', defaultDesc: true, render: (rec) => formatMonth(rec.month), className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'grossSalary', header: 'Gross', sortKey: 'grossSalary', align: 'right', render: (rec) => formatCurrency(rec.grossSalary), className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'deductions', header: 'Deductions', align: 'right', render: (rec) => formatCurrency(rec.deductions), className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'netSalary', header: 'Net', sortKey: 'netSalary', align: 'right', render: (rec) => <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(rec.netSalary)}</span> },
+    { key: 'status', header: 'Status', sortKey: 'status', render: (rec) => <StatusBadge status={rec.status} /> },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isActions: true,
+      align: 'right',
+      width: 190,
+      render: (rec) => (
+        <div className="flex items-center justify-end gap-1">
+          <IconButton as={Link} to={`/payroll/${rec._id}`} label={`View payslip for ${fullName(rec.employee)} (${formatMonth(rec.month)})`} icon={FileText} />
+          {STATUS_FLOW[rec.status] ? (
+            <Button variant="secondary" size="xs" iconRight={ArrowRight} onClick={() => setAdvanceTarget(rec)}>
+              Mark {STATUS_FLOW[rec.status]}
+            </Button>
+          ) : (
+            <span className="px-2 text-xs text-slate-400">Final</span>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  const totals = records.meta?.totals;
+
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-3">
-          <input type="month" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className={inputClass} />
-          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className={inputClass}>
-            <option value="">All employees</option>
-            {employees.map((e) => (
-              <option key={e._id} value={e._id}>{e.firstName} {e.lastName}</option>
-            ))}
-          </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={inputClass}>
-            <option value="">All statuses</option>
-            <option value="Draft">Draft</option>
-            <option value="Processed">Processed</option>
-            <option value="Paid">Paid</option>
-          </select>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={handleExport} disabled={exporting}>
-            <Download size={16} /> {exporting ? 'Exporting…' : 'Export'}
-          </Button>
-          <Button onClick={() => setGenerateOpen(true)}>
-            <Plus size={16} /> Generate Payroll
-          </Button>
-        </div>
-      </div>
+      {generateResult && (
+        <Alert tone={generateResult.generated.length ? 'success' : 'warning'} className="mb-4" title={`Payroll run for ${formatMonth(generateResult.month)}: ${generateResult.generated.length} created, ${generateResult.skipped.length} skipped`}>
+          {generateResult.skipped.length > 0 && (
+            <ul className="mt-1 list-inside list-disc">
+              {generateResult.skipped.slice(0, 5).map((s) => (
+                <li key={s.employee}>
+                  {s.employee} — {s.reason}
+                </li>
+              ))}
+              {generateResult.skipped.length > 5 && <li>…and {generateResult.skipped.length - 5} more</li>}
+            </ul>
+          )}
+          <button type="button" onClick={() => setGenerateResult(null)} className="mt-2 text-xs font-medium underline">
+            Dismiss
+          </button>
+        </Alert>
+      )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {status === 'loading' && <Loading label="Loading payroll records…" />}
-        {status === 'error' && <ErrorState message="Failed to load payroll records." />}
-        {status === 'ready' && records.length === 0 && (
-          <EmptyState title="No payroll records found" message="Generate payroll for a month to get started." />
-        )}
-        {status === 'ready' && records.length > 0 && (
+      <Toolbar
+        actions={
           <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Month</th>
-                  <th className="px-4 py-3 font-medium">Net Salary</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {records.map((rec) => (
-                  <tr key={rec._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Avatar src={rec.employee?.profileImageUrl} name={`${rec.employee?.firstName} ${rec.employee?.lastName}`} size={28} />
-                        <span>{rec.employee?.firstName} {rec.employee?.lastName}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{rec.month}</td>
-                    <td className="px-4 py-3 font-medium">{currency(rec.netSalary)}</td>
-                    <td className="px-4 py-3"><StatusBadge status={rec.status} /></td>
-                    <td className="px-4 py-3">
-                      {STATUS_FLOW[rec.status] && (
-                        <Button variant="secondary" onClick={() => advanceStatus(rec)} className="!px-2 !py-1 text-xs">
-                          Mark {STATUS_FLOW[rec.status]}
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
+            <Button variant="secondary" icon={Download} onClick={handleExport} loading={exporting}>
+              Export
+            </Button>
+            <Button icon={Plus} onClick={() => { setGenerateError(null); setGenerateOpen(true); }}>
+              Generate payroll
+            </Button>
           </>
+        }
+      >
+        <Input type="month" value={list.filters.month} onChange={(e) => list.setFilter('month', e.target.value)} aria-label="Filter by month" className="w-full sm:w-44" />
+        <Select value={list.filters.employee} onChange={(e) => list.setFilter('employee', e.target.value)} aria-label="Filter by employee" className="w-full sm:w-56">
+          <option value="">All employees</option>
+          {employees.map((e) => (
+            <option key={e._id} value={e._id}>
+              {fullName(e)} ({e.employeeId})
+            </option>
+          ))}
+        </Select>
+        <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-40">
+          <option value="">All statuses</option>
+          <option value="Draft">Draft</option>
+          <option value="Processed">Processed</option>
+          <option value="Paid">Paid</option>
+        </Select>
+        {list.hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={list.resetFilters}>
+            Clear
+          </Button>
         )}
-      </div>
+      </Toolbar>
 
-      <GeneratePayrollModal
-        open={generateOpen}
-        onClose={() => setGenerateOpen(false)}
-        onSubmit={handleGenerate}
-        employees={employees}
-        submitting={generating}
+      {totals && records.pagination?.total > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2 text-xs">
+          <Badge tone="neutral">{records.pagination.total} payslip{records.pagination.total === 1 ? '' : 's'}</Badge>
+          <Badge tone="neutral">Gross {formatCurrency(totals.gross)}</Badge>
+          <Badge tone="neutral">Deductions {formatCurrency(totals.deductions)}</Badge>
+          <Badge tone="primary">Net {formatCurrency(totals.net)}</Badge>
+        </div>
+      )}
+
+      <Card>
+        {records.status === 'ready' && records.data?.length === 0 && list.hasActiveFilters ? (
+          <NoResults onClear={list.resetFilters} />
+        ) : (
+          <DataTable
+            caption="Payroll records"
+            columns={columns}
+            rows={records.data || []}
+            status={records.status}
+            isFetching={records.isFetching}
+            error={records.error}
+            onRetry={records.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={records.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={Wallet}
+            emptyTitle="No payroll generated yet"
+            emptyMessage="Configure salary structures, then generate payroll for a month."
+            emptyAction={<Button icon={Plus} onClick={() => setGenerateOpen(true)}>Generate payroll</Button>}
+          />
+        )}
+      </Card>
+
+      <GeneratePayrollModal open={generateOpen} onClose={() => setGenerateOpen(false)} onSubmit={handleGenerate} employees={employees} submitting={generating} serverError={generateError} />
+
+      <ConfirmDialog
+        open={Boolean(advanceTarget)}
+        onClose={() => setAdvanceTarget(null)}
+        onConfirm={advanceStatus}
+        tone="info"
+        title={`Mark payroll as ${STATUS_FLOW[advanceTarget?.status] || ''}`}
+        message={
+          advanceTarget
+            ? `${fullName(advanceTarget.employee)} · ${formatMonth(advanceTarget.month)} · ${formatCurrency(advanceTarget.netSalary)} net. ${
+                STATUS_FLOW[advanceTarget.status] === 'Paid' ? 'Paid is final and cannot be reverted.' : 'Processed payslips become visible to the employee.'
+              }`
+            : ''
+        }
+        confirmLabel={`Mark ${STATUS_FLOW[advanceTarget?.status] || ''}`}
+        loading={advancing}
       />
     </div>
   );
 }
 
-function SalaryConfigTab({ employees, showToast }) {
-  const [modalTarget, setModalTarget] = useState(null); // employee
-  const [currentSalary, setCurrentSalary] = useState(null);
+function SalaryConfigTab() {
+  const { showToast } = useToast();
+  const salaries = useApiQuery((signal) => payrollApi.listSalaries({ signal }), []);
+  const [modalTarget, setModalTarget] = useState(null); // { employee, salary }
   const [submitting, setSubmitting] = useState(false);
-
-  const openModal = async (employee) => {
-    try {
-      const { data } = await payrollApi.getSalary(employee._id);
-      setCurrentSalary(data.data);
-      setModalTarget(employee);
-    } catch {
-      showToast('Failed to load current salary', 'error');
-    }
-  };
+  const [formError, setFormError] = useState(null);
+  const [search, setSearch] = useState('');
+  const [onlyMissing, setOnlyMissing] = useState(false);
 
   const handleSubmit = async (values) => {
     setSubmitting(true);
+    setFormError(null);
     try {
-      await payrollApi.updateSalary(modalTarget._id, values);
-      showToast('Salary updated successfully');
+      await payrollApi.updateSalary(modalTarget.employee._id, values);
+      showToast(`Salary updated for ${fullName(modalTarget.employee)}`);
       setModalTarget(null);
+      salaries.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to update salary', 'error');
+      setFormError(getApiErrorMessage(err, 'Unable to update salary.'));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const rows = (salaries.data || []).filter((row) => {
+    if (onlyMissing && row.salary) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return fullName(row.employee).toLowerCase().includes(q) || row.employee.employeeId.toLowerCase().includes(q);
+  });
+  const missing = (salaries.data || []).filter((r) => !r.salary).length;
+
+  const columns = [
+    {
+      key: 'employee',
+      header: 'Employee',
+      primary: true,
+      render: (row) => (
+        <div className="flex items-center gap-3">
+          <Avatar src={row.employee.profileImageUrl} name={fullName(row.employee)} size={30} />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-slate-900 dark:text-white">{fullName(row.employee)}</p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-mono">{row.employee.employeeId}</span> · {row.employee.designation?.name || '—'}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'department', header: 'Department', render: (row) => row.employee.department?.name || '—', className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'basic', header: 'Basic', align: 'right', render: (row) => (row.salary ? formatCurrency(row.salary.basic) : '—'), className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'gross', header: 'Gross', align: 'right', render: (row) => (row.salary ? formatCurrency(row.grossSalary) : '—'), className: 'text-slate-600 dark:text-slate-300' },
+    {
+      key: 'net',
+      header: 'Net',
+      align: 'right',
+      render: (row) =>
+        row.salary ? <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(row.netSalary)}</span> : <StatusBadge tone="warning" label="Not configured" />,
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isActions: true,
+      align: 'right',
+      width: 64,
+      render: (row) => <IconButton label={`Configure salary for ${fullName(row.employee)}`} icon={Settings2} onClick={() => { setFormError(null); setModalTarget(row); }} />,
+    },
+  ];
+
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      {employees.length === 0 ? (
-        <EmptyState title="No active employees" message="Add employees first to configure their salaries." />
-      ) : (
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-            <tr>
-              <th className="px-4 py-3 font-medium">Employee</th>
-              <th className="px-4 py-3 font-medium">Employee ID</th>
-              <th className="px-4 py-3 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {employees.map((emp) => (
-              <tr key={emp._id} className="text-slate-700 dark:text-slate-200">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Avatar src={emp.profileImageUrl} name={`${emp.firstName} ${emp.lastName}`} size={28} />
-                    <span>{emp.firstName} {emp.lastName}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{emp.employeeId}</td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => openModal(emp)}
-                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                    title="Configure salary"
-                  >
-                    <Settings size={15} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
+    <div>
+      {missing > 0 && salaries.status === 'ready' && (
+        <Alert tone="warning" className="mb-4" title={`${missing} active employee${missing === 1 ? '' : 's'} without a salary structure`}>
+          They will be skipped when payroll is generated.{' '}
+          <button type="button" className="font-medium underline" onClick={() => setOnlyMissing(true)}>
+            Show them
+          </button>
+        </Alert>
       )}
+      <Toolbar>
+        <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or ID…" aria-label="Search employees" className="w-full sm:w-72" />
+        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500" />
+          Only missing structures
+        </label>
+      </Toolbar>
+      <Card>
+        {salaries.status === 'ready' && rows.length === 0 && (search || onlyMissing) ? (
+          <NoResults onClear={() => { setSearch(''); setOnlyMissing(false); }} />
+        ) : (
+          <DataTable
+            caption="Salary structures"
+            columns={columns}
+            rows={rows}
+            status={salaries.status}
+            isFetching={salaries.isFetching}
+            error={salaries.error}
+            onRetry={salaries.refetch}
+            emptyIcon={AlertCircle}
+            emptyTitle="No active employees"
+            emptyMessage="Add employees first to configure their salaries."
+          />
+        )}
+      </Card>
 
       <SalaryConfigModal
         open={Boolean(modalTarget)}
         onClose={() => setModalTarget(null)}
         onSubmit={handleSubmit}
-        salary={currentSalary}
-        employeeName={modalTarget ? `${modalTarget.firstName} ${modalTarget.lastName}` : ''}
+        salary={modalTarget?.salary}
+        employeeName={modalTarget ? fullName(modalTarget.employee) : ''}
         submitting={submitting}
+        serverError={formError}
       />
     </div>
   );

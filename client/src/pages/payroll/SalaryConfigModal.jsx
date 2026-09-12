@@ -1,21 +1,26 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Modal from '../../components/Modal';
-import Button from '../../components/Button';
+import { Modal, Button, Input, FormField, Alert } from '../../components/ui';
+import { formatCurrency } from '../../utils/format';
+
+const money = (label) =>
+  z.coerce
+    .number({ invalid_type_error: `${label} must be a number` })
+    .nonnegative(`${label} cannot be negative`)
+    .max(1_000_000_000, `${label} is unrealistically large`)
+    .refine((v) => Math.round(v * 100) === v * 100, `${label} can have at most 2 decimal places`);
 
 const schema = z.object({
-  basic: z.coerce.number().nonnegative('Must be 0 or more'),
-  hra: z.coerce.number().nonnegative('Must be 0 or more'),
-  allowances: z.coerce.number().nonnegative('Must be 0 or more'),
-  deductions: z.coerce.number().nonnegative('Must be 0 or more'),
+  basic: money('Basic'),
+  hra: money('HRA'),
+  allowances: money('Allowances'),
+  deductions: money('Deductions'),
 });
 
-const inputClass =
-  'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
-
-export default function SalaryConfigModal({ open, onClose, onSubmit, salary, employeeName, submitting }) {
+export default function SalaryConfigModal({ open, onClose, onSubmit, salary, employeeName, submitting, serverError }) {
+  const firstRef = useRef(null);
   const {
     register,
     handleSubmit,
@@ -41,57 +46,70 @@ export default function SalaryConfigModal({ open, onClose, onSubmit, salary, emp
   const values = watch();
   const gross = Number(values.basic || 0) + Number(values.hra || 0) + Number(values.allowances || 0);
   const net = gross - Number(values.deductions || 0);
+  const { ref: basicRef, ...basicField } = register('basic');
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
-      title={`Configure Salary${employeeName ? ` — ${employeeName}` : ''}`}
+      onClose={submitting ? undefined : onClose}
+      title="Salary structure"
+      description={employeeName}
+      size="sm"
+      initialFocusRef={firstRef}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit(onSubmit)} disabled={submitting}>
-            {submitting ? 'Saving…' : 'Save salary'}
+          <Button type="submit" form="salary-form" loading={submitting}>
+            Save salary
           </Button>
         </>
       }
     >
-      <form className="space-y-3" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Basic</label>
-            <input type="number" step="0.01" {...register('basic')} className={inputClass} />
-            {errors.basic && <p className="mt-1 text-xs text-red-600">{errors.basic.message}</p>}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">HRA</label>
-            <input type="number" step="0.01" {...register('hra')} className={inputClass} />
-            {errors.hra && <p className="mt-1 text-xs text-red-600">{errors.hra.message}</p>}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Allowances</label>
-            <input type="number" step="0.01" {...register('allowances')} className={inputClass} />
-            {errors.allowances && <p className="mt-1 text-xs text-red-600">{errors.allowances.message}</p>}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Deductions</label>
-            <input type="number" step="0.01" {...register('deductions')} className={inputClass} />
-            {errors.deductions && <p className="mt-1 text-xs text-red-600">{errors.deductions.message}</p>}
-          </div>
+      <form id="salary-form" className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+        {serverError && <Alert tone="danger">{serverError}</Alert>}
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Basic" required error={errors.basic?.message}>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              {...basicField}
+              ref={(el) => {
+                basicRef(el);
+                firstRef.current = el;
+              }}
+            />
+          </FormField>
+          <FormField label="HRA" required error={errors.hra?.message}>
+            <Input type="number" step="0.01" min="0" inputMode="decimal" {...register('hra')} />
+          </FormField>
+          <FormField label="Allowances" required error={errors.allowances?.message}>
+            <Input type="number" step="0.01" min="0" inputMode="decimal" {...register('allowances')} />
+          </FormField>
+          <FormField label="Deductions" required error={errors.deductions?.message}>
+            <Input type="number" step="0.01" min="0" inputMode="decimal" {...register('deductions')} />
+          </FormField>
         </div>
 
-        <div className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800">
+        <dl className="space-y-1.5 rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
           <div className="flex justify-between text-slate-600 dark:text-slate-300">
-            <span>Gross Salary</span>
-            <span className="font-medium">{gross.toLocaleString()}</span>
+            <dt>Gross salary</dt>
+            <dd className="font-medium tabular">{formatCurrency(gross, { precise: true })}</dd>
           </div>
           <div className="flex justify-between text-slate-600 dark:text-slate-300">
-            <span>Net Salary</span>
-            <span className="font-medium text-indigo-600 dark:text-indigo-400">{net.toLocaleString()}</span>
+            <dt>Deductions</dt>
+            <dd className="font-medium tabular">− {formatCurrency(Number(values.deductions || 0), { precise: true })}</dd>
           </div>
-        </div>
+          <div className="flex justify-between border-t border-slate-200 pt-1.5 text-slate-900 dark:border-slate-700 dark:text-white">
+            <dt className="font-medium">Net salary</dt>
+            <dd className={`font-semibold tabular ${net < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary-600 dark:text-primary-300'}`}>{formatCurrency(net, { precise: true })}</dd>
+          </div>
+        </dl>
+        {net < 0 && <Alert tone="warning">Deductions exceed gross salary — the net will be negative.</Alert>}
+        {salary?.effectiveFrom && <p className="text-xs text-slate-400">Current structure effective since {new Date(salary.effectiveFrom).toLocaleDateString()}</p>}
       </form>
     </Modal>
   );

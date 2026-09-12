@@ -19,5 +19,9 @@ const attendanceSchema = new mongoose.Schema(
 );
 
 attendanceSchema.index({ employee: 1, date: 1 }, { unique: true });
+// Dashboard "present today" / 7-day overview count across all employees by
+// date + status — the unique index above starts with `employee`, so it
+// can't serve those queries.
+attendanceSchema.index({ date: 1, status: 1 });
 
 module.exports = mongoose.model('Attendance', attendanceSchema);

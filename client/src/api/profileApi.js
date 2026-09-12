@@ -1,7 +1,7 @@
 import api from './axiosInstance';
 
 export const profileApi = {
-  get: () => api.get('/profile/me'),
+  get: (config) => api.get('/profile/me', config),
   update: (payload) => api.put('/profile/me', payload),
   changePassword: (payload) => api.put('/profile/me/password', payload),
   uploadAvatar: (file) => {

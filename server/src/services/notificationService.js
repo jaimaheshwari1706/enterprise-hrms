@@ -1,4 +1,5 @@
 const { Notification } = require('../models');
+const logger = require('../utils/logger');
 
 // Only the "write" side is built here — other modules (leave approvals,
 // employee creation, payroll) can start creating notifications as soon as
@@ -9,7 +10,7 @@ async function notify({ user, title, message, type = 'GENERAL', link = '' }) {
   try {
     return await Notification.create({ user, title, message, type, link });
   } catch (err) {
-    console.error('[notifications] failed to create notification:', err.message);
+    logger.error('Failed to create notification', { type, error: err });
     return null;
   }
 }

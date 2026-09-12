@@ -145,7 +145,7 @@ describe('Leave application + approval workflow', () => {
     const applyRes2 = await request(app)
       .post('/api/leaves/apply')
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ leaveType: leaveType._id.toString(), startDate: '2026-08-15', endDate: '2026-08-15', reason: 'Trip 2' });
+      .send({ leaveType: leaveType._id.toString(), startDate: '2026-08-17', endDate: '2026-08-17', reason: 'Trip 2' });
 
     const managerCancelAttempt = await request(app)
       .patch(`/api/leaves/${applyRes2.body.data._id}/cancel`)

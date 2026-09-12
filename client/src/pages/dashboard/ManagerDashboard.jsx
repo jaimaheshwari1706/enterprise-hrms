@@ -1,77 +1,115 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, UserCheck, CalendarClock, Clock3 } from 'lucide-react';
+import { Users, UserCheck, CalendarClock, Clock3, UserX, ArrowRight, RefreshCw, CalendarRange } from 'lucide-react';
 import { dashboardApi } from '../../api/dashboardApi';
-import StatCard from '../../components/dashboard/StatCard';
-import StatusBadge from '../../components/StatusBadge';
-import { Loading, ErrorState, EmptyState } from '../../components/StateViews';
-
-function formatDate(value) {
-  return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { StatCard, Card, CardHeader, PageHeader, StatusBadge, Button, ErrorState, DashboardSkeleton, EmptyState, Avatar, DataTable } from '../../components/ui';
+import { formatDate, formatTime, fullName } from '../../utils/format';
+import QuickActions from '../../components/QuickActions';
+import TodayBanner from './TodayBanner';
 
 export default function ManagerDashboard() {
-  const [data, setData] = useState(null);
-  const [status, setStatus] = useState('loading');
+  const { data, status, error, refetch, isFetching } = useApiQuery((signal) => dashboardApi.manager({ signal }), []);
 
-  useEffect(() => {
-    dashboardApi
-      .manager()
-      .then(({ data }) => {
-        setData(data.data);
-        setStatus('ready');
-      })
-      .catch(() => setStatus('error'));
-  }, []);
+  if (status === 'loading') return <DashboardSkeleton stats={5} charts={2} />;
+  if (status === 'error' || !data) return <ErrorState message={error || 'Unable to load the dashboard.'} onRetry={refetch} />;
 
-  if (status === 'loading') return <Loading label="Loading dashboard…" />;
-  if (status === 'error' || !data) return <ErrorState message="Failed to load the dashboard." />;
+  const teamColumns = [
+    {
+      key: 'name',
+      header: 'Team member',
+      primary: true,
+      render: (m) => (
+        <Link to={`/employees/${m._id}`} className="flex items-center gap-3 hover:underline">
+          <Avatar src={m.profileImageUrl} name={fullName(m)} size={30} />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-slate-800 dark:text-slate-100">{fullName(m)}</p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{m.designation?.name || m.employeeId}</p>
+          </div>
+        </Link>
+      ),
+    },
+    { key: 'checkIn', header: 'Check in', render: (m) => formatTime(m.checkIn), className: 'text-slate-500 dark:text-slate-400' },
+    { key: 'checkOut', header: 'Check out', render: (m) => formatTime(m.checkOut), className: 'text-slate-500 dark:text-slate-400' },
+    { key: 'todayStatus', header: 'Today', render: (m) => <StatusBadge status={m.todayStatus} /> },
+  ];
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-white">Manager Dashboard</h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">An overview of your team.</p>
+      <PageHeader
+        title="Team Dashboard"
+        description="Your direct reports at a glance."
+        actions={
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refetch} loading={isFetching}>
+            Refresh
+          </Button>
+        }
+      />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Team Size" value={data.teamSize} icon={Users} accent="indigo" />
-        <StatCard label="Present Today" value={data.teamPresentToday} icon={UserCheck} accent="emerald" />
-        <StatCard label="On Leave Today" value={data.teamOnLeaveToday} icon={CalendarClock} accent="amber" />
-        <StatCard label="Pending Approvals" value={data.pendingApprovals} icon={Clock3} accent="amber" />
+      <QuickActions className="mb-5" />
+      <TodayBanner today={data.today} />
+
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <StatCard label="Team size" value={data.teamSize} icon={Users} accent="primary" to="/employees" />
+        <StatCard label="Present today" value={data.teamPresentToday} icon={UserCheck} accent="emerald" hint={data.teamSize ? `${Math.round((data.teamPresentToday / data.teamSize) * 100)}% of team` : undefined} />
+        <StatCard
+          label="Absent today"
+          value={data.teamAbsentToday}
+          icon={UserX}
+          accent={data.today && !data.today.working ? 'slate' : 'red'}
+          hint={data.today && !data.today.working ? (data.today.holiday ? 'Holiday' : 'Non-working day') : 'Not checked in'}
+        />
+        <StatCard label="On leave today" value={data.teamOnLeaveToday} icon={CalendarClock} accent="amber" hint={`${data.upcomingLeaves7d} starting in 7 days`} />
+        <StatCard label="Pending approvals" value={data.pendingApprovals} icon={Clock3} accent={data.pendingApprovals > 0 ? 'amber' : 'slate'} to="/leaves/approvals" hint={data.pendingApprovals > 0 ? 'Awaiting your decision' : 'All caught up'} />
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-slate-200 p-4 dark:border-slate-800">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Recent Leave Requests</h3>
-          <Link to="/leaves/approvals" className="text-xs text-indigo-600 hover:underline dark:text-indigo-400">
-            View all
-          </Link>
-        </div>
-        {data.recentLeaveRequests.length === 0 ? (
-          <EmptyState title="No recent requests" message="Your team hasn't submitted any leave requests yet." />
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              <tr>
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Dates</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+        <Card className="xl:col-span-3">
+          <CardHeader
+            title="Team today"
+            description="Attendance for each direct report"
+            actions={
+              <Link to="/attendance/team" className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline dark:text-primary-400">
+                Full attendance <ArrowRight size={13} aria-hidden="true" />
+              </Link>
+            }
+          />
+          <DataTable
+            columns={teamColumns}
+            rows={data.teamToday}
+            emptyTitle="No direct reports yet"
+            emptyMessage="Employees whose manager is set to you will appear here."
+            emptyIcon={Users}
+            dense
+          />
+        </Card>
+
+        <Card className="xl:col-span-2">
+          <CardHeader
+            title="Recent leave requests"
+            actions={
+              <Link to="/leaves/approvals" className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline dark:text-primary-400">
+                View all <ArrowRight size={13} aria-hidden="true" />
+              </Link>
+            }
+          />
+          {data.recentLeaveRequests.length === 0 ? (
+            <EmptyState compact icon={CalendarRange} title="No requests yet" message="Your team hasn't submitted any leave requests." />
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
               {data.recentLeaveRequests.map((leave) => (
-                <tr key={leave._id} className="text-slate-700 dark:text-slate-200">
-                  <td className="px-4 py-3">{leave.employee?.firstName} {leave.employee?.lastName}</td>
-                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{leave.leaveType?.name}</td>
-                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                    {formatDate(leave.startDate)} – {formatDate(leave.endDate)}
-                  </td>
-                  <td className="px-4 py-3"><StatusBadge status={leave.status} /></td>
-                </tr>
+                <li key={leave._id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-800 dark:text-slate-100">{fullName(leave.employee)}</p>
+                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                      {leave.leaveType?.name} · {formatDate(leave.startDate)} – {formatDate(leave.endDate)} · {leave.days}d
+                    </p>
+                  </div>
+                  <StatusBadge status={leave.status} />
+                </li>
               ))}
-            </tbody>
-          </table>
-        )}
+            </ul>
+          )}
+        </Card>
       </div>
     </div>
   );

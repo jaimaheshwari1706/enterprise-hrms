@@ -1,26 +1,38 @@
-const { Designation, Employee } = require('../models');
+const { Designation, Employee, Department } = require('../models');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
-const { getPagination, buildPaginationMeta } = require('../utils/pagination');
+const { getPagination, buildPaginationMeta, getSort } = require('../utils/pagination');
+const { containsRegex } = require('../utils/regex');
 const { logAction } = require('../services/auditService');
+const { DESIGNATION_SORT_FIELDS } = require('../validations/designation.validation');
 const ApiError = require('../utils/ApiError');
+
+async function assertDepartmentExists(department) {
+  const exists = await Department.exists({ _id: department });
+  if (!exists) throw new ApiError(422, 'Validation failed', ['department: Department not found']);
+}
 
 // GET /api/designations?page=&limit=&search=&department=&status=
 const listDesignations = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
+  const sort = getSort(req.query, DESIGNATION_SORT_FIELDS, { createdAt: -1 });
   const { search, department, status } = req.query;
 
   const filter = {};
   if (status) filter.status = status;
   if (department) filter.department = department;
-  if (search) filter.name = { $regex: search, $options: 'i' };
+  if (search) {
+    const regex = containsRegex(search);
+    filter.$or = [{ name: regex }, { code: regex }];
+  }
 
   const [data, total] = await Promise.all([
     Designation.find(filter)
       .populate('department', 'name code')
-      .sort({ createdAt: -1 })
+      .sort(sort)
       .skip(skip)
-      .limit(limit),
+      .limit(limit)
+      .lean(),
     Designation.countDocuments(filter),
   ]);
 
@@ -36,6 +48,7 @@ const getDesignation = asyncHandler(async (req, res) => {
 
 // POST /api/designations  (HR_ADMIN, SUPER_ADMIN)
 const createDesignation = asyncHandler(async (req, res) => {
+  await assertDepartmentExists(req.body.department);
   const designation = await Designation.create(req.body);
 
   await logAction({
@@ -52,6 +65,7 @@ const createDesignation = asyncHandler(async (req, res) => {
 
 // PUT /api/designations/:id  (HR_ADMIN, SUPER_ADMIN)
 const updateDesignation = asyncHandler(async (req, res) => {
+  await assertDepartmentExists(req.body.department);
   const designation = await Designation.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,

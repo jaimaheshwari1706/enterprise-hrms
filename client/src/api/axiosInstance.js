@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { store } from '../app/store';
-import { logout, setAccessToken } from '../features/auth/authSlice';
+import { sessionExpired, setAccessToken } from '../features/auth/authSlice';
 
 // Single axios instance used by every api/*.js module. Keeping the base
 // URL, auth header, and refresh-token logic here means feature code never
@@ -8,6 +8,7 @@ import { logout, setAccessToken } from '../features/auth/authSlice';
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
   withCredentials: true, // refresh token cookie is httpOnly
+  timeout: 30000,
 });
 
 api.interceptors.request.use((config) => {
@@ -19,46 +20,54 @@ api.interceptors.request.use((config) => {
 });
 
 // If a request fails with 401, try refreshing the access token once, then
-// retry the original request. If the refresh itself fails, log the user out.
-let isRefreshing = false;
-let pendingQueue = [];
+// retry the original request. If the refresh itself fails, end the session
+// (the login page explains why). Concurrent 401s share one refresh call.
+let refreshPromise = null;
 
-function resolveQueue(token) {
-  pendingQueue.forEach((cb) => cb(token));
-  pendingQueue = [];
+function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = api
+      .post('/auth/refresh-token')
+      .then(({ data }) => {
+        const token = data.data.accessToken;
+        store.dispatch(setAccessToken(token));
+        return token;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
 }
 
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const status = error.response?.status;
+    const code = error.response?.data?.code;
+    const isAuthRoute = originalRequest?.url?.includes('/auth/refresh-token') || originalRequest?.url?.includes('/auth/login');
 
-    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url.includes('/auth/refresh-token')) {
+    // Only an *expired or missing* access token is worth a refresh. A token
+    // the server calls invalid, or a deactivated account, is a hard stop.
+    const refreshable = status === 401 && !isAuthRoute && !originalRequest._retry && code !== 'TOKEN_INVALID' && code !== 'ACCOUNT_INACTIVE' && code !== 'SESSION_REVOKED';
+
+    if (refreshable) {
       originalRequest._retry = true;
-
-      if (isRefreshing) {
-        return new Promise((resolve) => {
-          pendingQueue.push((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            resolve(api(originalRequest));
-          });
-        });
-      }
-
-      isRefreshing = true;
       try {
-        const { data } = await api.post('/auth/refresh-token');
-        const newToken = data.data.accessToken;
-        store.dispatch(setAccessToken(newToken));
-        resolveQueue(newToken);
-        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        const token = await refreshAccessToken();
+        originalRequest.headers.Authorization = `Bearer ${token}`;
         return api(originalRequest);
       } catch (refreshError) {
-        store.dispatch(logout());
+        if (store.getState().auth.status === 'authenticated') {
+          store.dispatch(sessionExpired());
+        }
         return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
       }
+    }
+
+    if (status === 401 && !isAuthRoute && store.getState().auth.status === 'authenticated') {
+      store.dispatch(sessionExpired());
     }
 
     return Promise.reject(error);

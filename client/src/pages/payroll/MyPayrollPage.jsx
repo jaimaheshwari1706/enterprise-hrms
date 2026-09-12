@@ -1,111 +1,93 @@
-import { useCallback, useEffect, useState } from 'react';
-import { payrollApi } from '../../api/payrollApi';
 import { useSelector } from 'react-redux';
+import { Link, useNavigate } from 'react-router-dom';
+import { Wallet, FileText } from 'lucide-react';
+import { payrollApi } from '../../api/payrollApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
-import Pagination from '../../components/Pagination';
-import StatusBadge from '../../components/StatusBadge';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
-
-function currency(value) {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
-}
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import { Card, PageHeader, DataTable, StatusBadge, StatCard, Alert, StatCardSkeleton, IconButton } from '../../components/ui';
+import { formatCurrency, formatMonth } from '../../utils/format';
 
 export default function MyPayrollPage() {
   const user = useSelector(selectCurrentUser);
-  const [records, setRecords] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [page, setPage] = useState(1);
-  const [status, setStatus] = useState('loading');
+  const navigate = useNavigate();
+  const hasProfile = Boolean(user?.employee);
+  const list = useListParams({ pageSize: 12, sort: '-month' });
+  const payroll = useApiQuery((signal) => payrollApi.myPayroll(list.params, { signal }), [JSON.stringify(list.params)], { enabled: hasProfile });
 
-  const fetchPayroll = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await payrollApi.myPayroll({ page, limit: 12 });
-      setRecords(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page]);
+  // The most recent payslip overall (not just on this page) is the first
+  // row of the default sort on page 1.
+  const latest = list.page === 1 && list.sort === '-month' ? payroll.data?.[0] : null;
 
-  useEffect(() => {
-    fetchPayroll();
-  }, [fetchPayroll]);
+  const columns = [
+    { key: 'month', header: 'Month', sortKey: 'month', defaultDesc: true, primary: true, render: (rec) => <span className="font-medium text-slate-900 dark:text-white">{formatMonth(rec.month)}</span> },
+    { key: 'basic', header: 'Basic', align: 'right', render: (rec) => formatCurrency(rec.basic), className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'hra', header: 'HRA', align: 'right', render: (rec) => formatCurrency(rec.hra), className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'allowances', header: 'Allowances', align: 'right', render: (rec) => formatCurrency(rec.allowances), className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
+    { key: 'grossSalary', header: 'Gross', align: 'right', render: (rec) => formatCurrency(rec.grossSalary), className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'deductions', header: 'Deductions', align: 'right', render: (rec) => formatCurrency(rec.deductions), className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'netSalary', header: 'Net', sortKey: 'netSalary', align: 'right', render: (rec) => <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(rec.netSalary)}</span> },
+    { key: 'status', header: 'Status', render: (rec) => <StatusBadge status={rec.status} /> },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isActions: true,
+      align: 'right',
+      width: 56,
+      render: (rec) => <IconButton as={Link} to={`/payroll/${rec._id}`} label={`View payslip for ${formatMonth(rec.month)}`} icon={FileText} onClick={(e) => e.stopPropagation()} />,
+    },
+  ];
 
-  const latest = records[0];
+  if (!hasProfile) {
+    return (
+      <div>
+        <PageHeader title="My Payroll" description="Your salary breakdown and payslip history." />
+        <Alert tone="info" title="No employee profile linked">
+          Payslips are issued against an employee record. Ask HR to link one to this account.
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-white">My Payroll</h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">View your salary breakdown and payslip history.</p>
+      <PageHeader title="My Payroll" description="Your salary breakdown and payslip history." />
 
-      {!user?.employee && (
-        <EmptyState title="No employee profile linked" message="This account isn't linked to an employee record." />
-      )}
+      {payroll.status === 'loading' ? (
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <StatCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : latest ? (
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <StatCard label="Latest payslip" value={formatMonth(latest.month)} icon={Wallet} accent="primary" hint={latest.status} />
+          <StatCard label="Gross salary" value={formatCurrency(latest.grossSalary)} accent="slate" hint="Basic + HRA + allowances" />
+          <StatCard label="Deductions" value={formatCurrency(latest.deductions)} accent="amber" />
+          <StatCard label="Net salary" value={formatCurrency(latest.netSalary)} accent="emerald" valueClassName="text-emerald-700 dark:text-emerald-300" />
+        </div>
+      ) : null}
 
-      {user?.employee && (
-        <>
-          {latest && (
-            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <SummaryCard label="Latest Month" value={latest.month} />
-              <SummaryCard label="Gross Salary" value={currency(latest.grossSalary)} />
-              <SummaryCard label="Deductions" value={currency(latest.deductions)} />
-              <SummaryCard label="Net Salary" value={currency(latest.netSalary)} highlight />
-            </div>
-          )}
-
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-            {status === 'loading' && <Loading label="Loading payroll…" />}
-            {status === 'error' && <ErrorState message="Failed to load payroll records." />}
-            {status === 'ready' && records.length === 0 && (
-              <EmptyState title="No payroll records yet" message="Your payslips will appear here once HR processes them." />
-            )}
-            {status === 'ready' && records.length > 0 && (
-              <>
-                <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-                  <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Month</th>
-                      <th className="px-4 py-3 font-medium">Basic</th>
-                      <th className="px-4 py-3 font-medium">HRA</th>
-                      <th className="px-4 py-3 font-medium">Allowances</th>
-                      <th className="px-4 py-3 font-medium">Deductions</th>
-                      <th className="px-4 py-3 font-medium">Net Salary</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {records.map((rec) => (
-                      <tr key={rec._id} className="text-slate-700 dark:text-slate-200">
-                        <td className="px-4 py-3 font-medium">{rec.month}</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{currency(rec.basic)}</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{currency(rec.hra)}</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{currency(rec.allowances)}</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{currency(rec.deductions)}</td>
-                        <td className="px-4 py-3 font-medium">{currency(rec.netSalary)}</td>
-                        <td className="px-4 py-3"><StatusBadge status={rec.status} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table></div>
-                <Pagination pagination={pagination} onPageChange={setPage} />
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, highlight }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-sm text-slate-500 dark:text-slate-400">{label}</p>
-      <p className={`mt-1 text-xl font-semibold ${highlight ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-900 dark:text-white'}`}>
-        {value}
-      </p>
+      <Card>
+        <DataTable
+          caption="My payslips"
+          columns={columns}
+          rows={payroll.data || []}
+          status={payroll.status}
+          isFetching={payroll.isFetching}
+          error={payroll.error}
+          onRetry={payroll.refetch}
+          sort={list.sort}
+          onSort={list.setSort}
+          pagination={payroll.pagination}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          onRowClick={(rec) => navigate(`/payroll/${rec._id}`)}
+          emptyIcon={Wallet}
+          emptyTitle="No payslips yet"
+          emptyMessage="Payslips appear here once HR processes payroll for a month."
+        />
+      </Card>
     </div>
   );
 }

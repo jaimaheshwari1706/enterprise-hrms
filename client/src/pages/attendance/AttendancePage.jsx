@@ -1,171 +1,167 @@
-import { useCallback, useEffect, useState } from 'react';
-import { LogIn, LogOut, Clock } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
+import { LogIn, LogOut, Clock, CalendarDays } from 'lucide-react';
 import { attendanceApi } from '../../api/attendanceApi';
+import { selectCurrentUser } from '../../features/auth/authSlice';
 import { useToast } from '../../hooks/useToast';
-import Button from '../../components/Button';
-import Pagination from '../../components/Pagination';
-import StatusBadge from '../../components/StatusBadge';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import { Button, Card, CardHeader, PageHeader, DataTable, StatusBadge, Input, Select, Toolbar, Alert, Skeleton, ErrorState, NoResults } from '../../components/ui';
+import { formatDate, formatTime, formatHours } from '../../utils/format';
+import { getApiErrorMessage } from '../../utils/apiError';
 
-function formatTime(value) {
-  if (!value) return '—';
-  return new Date(value).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDate(value) {
-  return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+// Live "hours so far" since check-in, ticking once a minute.
+function useElapsedHours(checkIn, stopAt) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!checkIn || stopAt) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, [checkIn, stopAt]);
+  if (!checkIn) return 0;
+  const end = stopAt ? new Date(stopAt).getTime() : now;
+  return Math.max(0, (end - new Date(checkIn).getTime()) / 3600000);
 }
 
 export default function AttendancePage() {
+  const user = useSelector(selectCurrentUser);
   const { showToast } = useToast();
+  const [acting, setActing] = useState(null);
+  const hasProfile = Boolean(user?.employee);
 
-  const [today, setToday] = useState(null);
-  const [todayStatus, setTodayStatus] = useState('loading');
-  const [actionLoading, setActionLoading] = useState(false);
+  const today = useApiQuery((signal) => attendanceApi.today({ signal }), [], { enabled: hasProfile });
+  const list = useListParams({ pageSize: 10, sort: '-date', filters: { status: '', from: '', to: '' } });
+  const history = useApiQuery((signal) => attendanceApi.myHistory(list.params, { signal }), [JSON.stringify(list.params)], { enabled: hasProfile });
 
-  const [history, setHistory] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [page, setPage] = useState(1);
-  const [historyStatus, setHistoryStatus] = useState('loading');
+  const record = today.data;
+  const hasCheckedIn = Boolean(record?.checkIn);
+  const hasCheckedOut = Boolean(record?.checkOut);
+  const elapsed = useElapsedHours(record?.checkIn, record?.checkOut);
 
-  const fetchToday = useCallback(async () => {
-    setTodayStatus('loading');
+  const act = async (kind) => {
+    setActing(kind);
     try {
-      const { data } = await attendanceApi.today();
-      setToday(data.data);
-      setTodayStatus('ready');
-    } catch {
-      setTodayStatus('error');
-    }
-  }, []);
-
-  const fetchHistory = useCallback(async () => {
-    setHistoryStatus('loading');
-    try {
-      const { data } = await attendanceApi.myHistory({ page, limit: 10 });
-      setHistory(data.data);
-      setPagination(data.pagination);
-      setHistoryStatus('ready');
-    } catch {
-      setHistoryStatus('error');
-    }
-  }, [page]);
-
-  useEffect(() => {
-    fetchToday();
-  }, [fetchToday]);
-
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
-
-  const handleCheckIn = async () => {
-    setActionLoading(true);
-    try {
-      await attendanceApi.checkIn();
-      showToast('Checked in successfully');
-      fetchToday();
-      fetchHistory();
+      await (kind === 'in' ? attendanceApi.checkIn() : attendanceApi.checkOut());
+      showToast(kind === 'in' ? 'Checked in successfully' : 'Checked out successfully');
+      today.refetch();
+      history.refetch();
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to check in', 'error');
+      showToast(getApiErrorMessage(err), 'error');
     } finally {
-      setActionLoading(false);
+      setActing(null);
     }
   };
 
-  const handleCheckOut = async () => {
-    setActionLoading(true);
-    try {
-      await attendanceApi.checkOut();
-      showToast('Checked out successfully');
-      fetchToday();
-      fetchHistory();
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to check out', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const columns = [
+    { key: 'date', header: 'Date', sortKey: 'date', defaultDesc: true, primary: true, render: (rec) => <span className="font-medium text-slate-900 dark:text-white">{formatDate(rec.date, { weekday: 'short' })}</span> },
+    { key: 'checkIn', header: 'Check in', render: (rec) => formatTime(rec.checkIn), className: 'text-slate-600 tabular dark:text-slate-300' },
+    { key: 'checkOut', header: 'Check out', render: (rec) => formatTime(rec.checkOut), className: 'text-slate-600 tabular dark:text-slate-300' },
+    { key: 'workingHours', header: 'Hours', sortKey: 'workingHours', align: 'right', render: (rec) => formatHours(rec.workingHours), className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'status', header: 'Status', sortKey: 'status', render: (rec) => <StatusBadge status={rec.status} /> },
+  ];
 
-  const hasCheckedIn = Boolean(today?.checkIn);
-  const hasCheckedOut = Boolean(today?.checkOut);
+  if (!hasProfile) {
+    return (
+      <div>
+        <PageHeader title="Attendance" description="Track your daily check-in and check-out." />
+        <Alert tone="info" title="No employee profile linked">
+          Attendance is recorded against an employee record. Ask HR to link one to this account.
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-white">Attendance</h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
-        Track your daily check-in and check-out.
-      </p>
+      <PageHeader title="Attendance" description="Track your daily check-in and check-out." />
 
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-        {todayStatus === 'loading' && <Loading label="Loading today's status…" />}
-        {todayStatus === 'error' && <ErrorState message="Failed to load today's attendance." />}
-        {todayStatus === 'ready' && (
-          <div className="flex flex-wrap items-center justify-between gap-4">
+      <Card className="mb-6">
+        {today.status === 'loading' ? (
+          <div className="flex items-center gap-4 p-5">
+            <Skeleton className="h-12 w-12 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-3 w-40" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+          </div>
+        ) : today.status === 'error' ? (
+          <ErrorState compact message={today.error} onRetry={today.refetch} />
+        ) : (
+          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
-                <Clock size={22} />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
+                <Clock size={22} aria-hidden="true" />
               </div>
               <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Today, {formatDate(new Date())}</p>
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                  {hasCheckedIn ? `Checked in at ${formatTime(today.checkIn)}` : 'Not checked in yet'}
-                  {hasCheckedOut && ` · Checked out at ${formatTime(today.checkOut)}`}
-                </p>
-                {hasCheckedOut && (
-                  <p className="text-xs text-slate-400">
-                    {today.workingHours} hours worked · <StatusBadge status={today.status} />
-                  </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Today · {formatDate(new Date(), { timeZone: undefined, weekday: 'long' })}</p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-700 dark:text-slate-200">
+                  <StatusBadge status={hasCheckedOut ? 'Checked out' : hasCheckedIn ? 'Checked in' : record?.status === 'Leave' ? 'Leave' : 'Not checked in'} size="md" />
+                  {hasCheckedIn && <span>In at {formatTime(record.checkIn)}</span>}
+                  {hasCheckedOut ? (
+                    <span>· Out at {formatTime(record.checkOut)} · {formatHours(record.workingHours)} worked</span>
+                  ) : hasCheckedIn ? (
+                    <span className="text-slate-500 dark:text-slate-400">· {formatHours(elapsed)} so far</span>
+                  ) : null}
+                </div>
+                {hasCheckedIn && !hasCheckedOut && elapsed < 8 && (
+                  <p className="mt-1 text-xs text-slate-400">A full day is 8 hours; checking out earlier records a half day.</p>
                 )}
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleCheckIn} disabled={hasCheckedIn || actionLoading}>
-                <LogIn size={16} /> Check In
+              <Button icon={LogIn} onClick={() => act('in')} disabled={hasCheckedIn} loading={acting === 'in'}>
+                Check in
               </Button>
-              <Button variant="secondary" onClick={handleCheckOut} disabled={!hasCheckedIn || hasCheckedOut || actionLoading}>
-                <LogOut size={16} /> Check Out
+              <Button variant="secondary" icon={LogOut} onClick={() => act('out')} disabled={!hasCheckedIn || hasCheckedOut} loading={acting === 'out'}>
+                Check out
               </Button>
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
-      <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Recent History</h2>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {historyStatus === 'loading' && <Loading label="Loading history…" />}
-        {historyStatus === 'error' && <ErrorState message="Failed to load attendance history." />}
-        {historyStatus === 'ready' && history.length === 0 && (
-          <EmptyState title="No attendance records yet" message="Check in for the first time to start building your history." />
+      <Card>
+        <CardHeader title="History" description="Your attendance records, newest first" />
+        <div className="px-5 pt-4">
+          <Toolbar className="mb-3">
+            <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-40">
+              <option value="">All statuses</option>
+              <option value="Present">Present</option>
+              <option value="HalfDay">Half day</option>
+              <option value="Leave">On leave</option>
+              <option value="Absent">Absent</option>
+            </Select>
+            <Input type="date" value={list.filters.from} max={list.filters.to || undefined} onChange={(e) => list.setFilter('from', e.target.value)} aria-label="From date" className="w-full sm:w-40" />
+            <Input type="date" value={list.filters.to} min={list.filters.from || undefined} onChange={(e) => list.setFilter('to', e.target.value)} aria-label="To date" className="w-full sm:w-40" />
+            {list.hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={list.resetFilters}>
+                Clear
+              </Button>
+            )}
+          </Toolbar>
+        </div>
+        {history.status === 'ready' && history.data?.length === 0 && list.hasActiveFilters ? (
+          <NoResults onClear={list.resetFilters} />
+        ) : (
+          <DataTable
+            caption="Attendance history"
+            columns={columns}
+            rows={history.data || []}
+            status={history.status}
+            isFetching={history.isFetching}
+            error={history.error}
+            onRetry={history.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={history.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={CalendarDays}
+            emptyTitle="No attendance records yet"
+            emptyMessage="Check in for the first time to start building your history."
+          />
         )}
-        {historyStatus === 'ready' && history.length > 0 && (
-          <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Check In</th>
-                  <th className="px-4 py-3 font-medium">Check Out</th>
-                  <th className="px-4 py-3 font-medium">Hours</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {history.map((rec) => (
-                  <tr key={rec._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="px-4 py-3">{formatDate(rec.date)}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatTime(rec.checkIn)}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatTime(rec.checkOut)}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{rec.workingHours || '—'}</td>
-                    <td className="px-4 py-3"><StatusBadge status={rec.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
-          </>
-        )}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -20,5 +20,9 @@ const leaveRequestSchema = new mongoose.Schema(
 );
 
 leaveRequestSchema.index({ employee: 1, status: 1 });
+// Approval queue (status filter + newest first) and overlap detection
+// (employee + date range) — both hit on every apply/list.
+leaveRequestSchema.index({ status: 1, createdAt: -1 });
+leaveRequestSchema.index({ employee: 1, startDate: 1, endDate: 1 });
 
 module.exports = mongoose.model('LeaveRequest', leaveRequestSchema);

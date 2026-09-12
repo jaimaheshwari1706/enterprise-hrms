@@ -7,7 +7,7 @@ const env = require('../config/env');
 // stolen, the attacker only has a small window to use it.
 function generateAccessToken(user) {
   return jwt.sign(
-    { sub: user._id.toString(), role: user.role },
+    { sub: user._id.toString(), role: user.role, ver: user.tokenVersion || 0 },
     env.jwt.accessSecret,
     { expiresIn: env.jwt.accessExpiry }
   );
@@ -36,6 +36,14 @@ function verifyRefreshToken(token) {
   return jwt.verify(token, env.jwt.refreshSecret);
 }
 
+// Reads the `exp` claim (seconds) of an already-signed token as a Date, so
+// the DB row and the cookie can use the exact expiry the JWT was signed
+// with (derived from JWT_*_EXPIRY) instead of a duplicated constant.
+function getTokenExpiry(token) {
+  const decoded = jwt.decode(token);
+  return decoded?.exp ? new Date(decoded.exp * 1000) : null;
+}
+
 // We never store the raw refresh token in the DB — only its hash. That way
 // a leaked database dump doesn't hand out usable refresh tokens.
 function hashToken(token) {
@@ -47,5 +55,6 @@ module.exports = {
   generateRefreshToken,
   verifyAccessToken,
   verifyRefreshToken,
+  getTokenExpiry,
   hashToken,
 };

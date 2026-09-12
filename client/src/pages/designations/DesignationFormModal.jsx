@@ -1,19 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Modal from '../../components/Modal';
-import Button from '../../components/Button';
+import { Modal, Button, Input, Select, Textarea, FormField, Alert } from '../../components/ui';
 
 const schema = z.object({
-  name: z.string().min(2, 'Designation name is required'),
-  code: z.string().min(2, 'Code is required').max(15, 'Code must be 15 characters or fewer'),
+  name: z.string().trim().min(2, 'Designation name is required').max(80),
+  code: z.string().trim().min(2, 'Code is required').max(15, 'Code must be 15 characters or fewer'),
   department: z.string().min(1, 'Department is required'),
-  description: z.string().optional(),
+  description: z.string().trim().max(500).optional(),
   status: z.enum(['active', 'inactive']),
 });
 
-export default function DesignationFormModal({ open, onClose, onSubmit, designation, departments, submitting }) {
+export default function DesignationFormModal({ open, onClose, onSubmit, designation, departments, submitting, serverError }) {
+  const firstFieldRef = useRef(null);
   const {
     register,
     handleSubmit,
@@ -40,83 +40,63 @@ export default function DesignationFormModal({ open, onClose, onSubmit, designat
     }
   }, [open, designation, departments, reset]);
 
+  const { ref: nameRef, ...nameField } = register('name');
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
-      title={designation ? 'Edit Designation' : 'Add Designation'}
+      onClose={submitting ? undefined : onClose}
+      title={designation ? 'Edit designation' : 'New designation'}
+      initialFocusRef={firstFieldRef}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit(onSubmit)} disabled={submitting}>
-            {submitting ? 'Saving…' : designation ? 'Save changes' : 'Create designation'}
+          <Button type="submit" form="designation-form" loading={submitting}>
+            {designation ? 'Save changes' : 'Create designation'}
           </Button>
         </>
       }
     >
-      <form className="space-y-3" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-            Designation Name
-          </label>
-          <input
-            {...register('name')}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="e.g. Software Engineer"
-          />
-          {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+      <form id="designation-form" className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+        {serverError && <Alert tone="danger">{serverError}</Alert>}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <FormField label="Designation name" required error={errors.name?.message} className="sm:col-span-2">
+            <Input
+              placeholder="e.g. Software Engineer"
+              {...nameField}
+              ref={(el) => {
+                nameRef(el);
+                firstFieldRef.current = el;
+              }}
+            />
+          </FormField>
+          <FormField label="Code" required error={errors.code?.message}>
+            <Input placeholder="SE" className="uppercase" maxLength={15} {...register('code')} />
+          </FormField>
         </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Code</label>
-          <input
-            {...register('code')}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm uppercase outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="e.g. SE"
-          />
-          {errors.code && <p className="mt-1 text-xs text-red-600">{errors.code.message}</p>}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField label="Department" required error={errors.department?.message}>
+            <Select {...register('department')}>
+              {departments.length === 0 && <option value="">No departments yet</option>}
+              {departments.map((d) => (
+                <option key={d._id} value={d._id}>
+                  {d.name}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label="Status" required>
+            <Select {...register('status')}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </Select>
+          </FormField>
         </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Department</label>
-          <select
-            {...register('department')}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          >
-            {departments.length === 0 && <option value="">No departments yet</option>}
-            {departments.map((d) => (
-              <option key={d._id} value={d._id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          {errors.department && <p className="mt-1 text-xs text-red-600">{errors.department.message}</p>}
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-            Description
-          </label>
-          <textarea
-            {...register('description')}
-            rows={2}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            placeholder="Optional"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Status</label>
-          <select
-            {...register('status')}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </div>
+        <FormField label="Description" error={errors.description?.message}>
+          <Textarea rows={2} placeholder="Optional" {...register('description')} />
+        </FormField>
       </form>
     </Modal>
   );

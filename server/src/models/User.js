@@ -48,6 +48,27 @@ const userSchema = new mongoose.Schema(
       select: false,
       default: null,
     },
+    // Per-account brute-force protection: after N consecutive failures the
+    // account is locked until `lockUntil`. Reset on successful login.
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    lockUntil: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    // Embedded in every access token as `ver`. Bumped by "sign out
+    // everywhere", password change/reset and deactivation, so access tokens
+    // minted before the bump are rejected even though their signature is
+    // still valid (a plain timestamp comparison would be ambiguous within
+    // the same second because JWT iat is second-granular).
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

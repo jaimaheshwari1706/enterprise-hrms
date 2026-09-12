@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const env = require('../config/env');
+const logger = require('../utils/logger');
 
 // When EMAIL_ENABLED=false (the default for local dev), emails are just
 // logged to the console instead of actually being sent — so auth flows
@@ -24,7 +25,10 @@ function getTransporter() {
 
 async function sendMail({ to, subject, html, text }) {
   if (!env.email.enabled) {
-    console.log(`[email:disabled] Would send "${subject}" to ${to}\n${text || html}`);
+    // Dev convenience: temporary passwords / reset links are visible in
+    // the console when SMTP is off. Never enabled in production.
+    if (!env.isProduction) logger.debug(`[email:disabled] Would send "${subject}" to ${to}\n${text || html}`);
+    else logger.warn('Email disabled: message not sent', { subject, to });
     return { skipped: true };
   }
 

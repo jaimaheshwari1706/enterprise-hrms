@@ -4,14 +4,41 @@
 require('dotenv').config();
 
 const nodeEnv = process.env.NODE_ENV || 'development';
+const isProduction = nodeEnv === 'production';
 
-// JWT secrets must be set explicitly in production — falling back to the
-// dev placeholders would let anyone forge a token (including SUPER_ADMIN)
-// for a publicly-known secret. Fail at boot, not on the first login attempt.
-if (nodeEnv === 'production' && (!process.env.JWT_ACCESS_SECRET || !process.env.JWT_REFRESH_SECRET)) {
-  throw new Error(
-    'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be set in production (no dev fallback allowed).'
-  );
+function fail(message) {
+  throw new Error(`[env] ${message}`);
+}
+
+// --- Production guards -----------------------------------------------------
+// Everything here is a misconfiguration that would otherwise surface as a
+// confusing runtime failure (or, worse, silently run against the wrong
+// database / with forgeable tokens). Fail at boot instead.
+if (isProduction) {
+  if (!process.env.MONGO_URI) {
+    fail('MONGO_URI must be set in production (no localhost fallback allowed).');
+  }
+  if (!process.env.JWT_ACCESS_SECRET || !process.env.JWT_REFRESH_SECRET) {
+    fail('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be set in production (no dev fallback allowed).');
+  }
+  if (process.env.JWT_ACCESS_SECRET.length < 32 || process.env.JWT_REFRESH_SECRET.length < 32) {
+    fail('JWT secrets must be at least 32 characters long in production.');
+  }
+  if (process.env.JWT_ACCESS_SECRET === process.env.JWT_REFRESH_SECRET) {
+    fail('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different values.');
+  }
+}
+
+// The business timezone used to decide which calendar day an attendance
+// check-in or a leave day belongs to. Render runs in UTC, so without this
+// an employee in Asia/Kolkata checking in at 02:00 would be recorded on the
+// previous day. Validated with Intl so a typo fails at boot, not at the
+// first check-in.
+const timezone = process.env.APP_TIMEZONE || 'Asia/Kolkata';
+try {
+  new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+} catch {
+  fail(`APP_TIMEZONE "${timezone}" is not a valid IANA timezone (e.g. Asia/Kolkata, UTC, America/New_York).`);
 }
 
 const corsOrigins = (process.env.CORS_ORIGINS || process.env.CLIENT_URL || 'http://localhost:5173')
@@ -21,13 +48,16 @@ const corsOrigins = (process.env.CORS_ORIGINS || process.env.CLIENT_URL || 'http
 
 const env = {
   nodeEnv,
+  isProduction,
   port: Number(process.env.PORT) || 5000,
+  logLevel: process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
+  timezone,
 
   // Render (and most PaaS) terminate TLS at a single reverse proxy hop in
   // front of the app. Without this, express-rate-limit throws on the
   // X-Forwarded-For header it sees, and req.ip resolves to the proxy's
   // address instead of the client's.
-  trustProxy: nodeEnv === 'production' ? 1 : false,
+  trustProxy: isProduction ? 1 : false,
 
   mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/enterprise_hrms',
 
@@ -36,6 +66,12 @@ const env = {
     accessExpiry: process.env.JWT_ACCESS_EXPIRY || '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev_refresh_secret',
     refreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
+  },
+
+  auth: {
+    // Per-account brute-force protection (independent of the IP limiter).
+    maxFailedLogins: Number(process.env.AUTH_MAX_FAILED_LOGINS) || 5,
+    lockoutMinutes: Number(process.env.AUTH_LOCKOUT_MINUTES) || 15,
   },
 
   redis: {

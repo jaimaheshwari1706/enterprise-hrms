@@ -1,166 +1,142 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Download } from 'lucide-react';
+import { useState } from 'react';
+import { Download, Users2 } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
 import { employeeApi } from '../../api/employeeApi';
 import { attendanceApi } from '../../api/attendanceApi';
 import { exportApi } from '../../api/exportApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
-import Avatar from '../../components/Avatar';
-import StatusBadge from '../../components/StatusBadge';
-import Pagination from '../../components/Pagination';
-import Button from '../../components/Button';
 import { useToast } from '../../hooks/useToast';
-import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
-
-function formatTime(value) {
-  if (!value) return '—';
-  return new Date(value).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDate(value) {
-  return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-const inputClass =
-  'rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+import { useApiQuery } from '../../hooks/useApiQuery';
+import { useListParams } from '../../hooks/useListParams';
+import { Button, Card, PageHeader, DataTable, StatusBadge, Avatar, Input, Select, Toolbar, NoResults } from '../../components/ui';
+import { formatDate, formatTime, formatHours, fullName, todayInputValue } from '../../utils/format';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function TeamAttendancePage() {
   const user = useSelector(selectCurrentUser);
   const canExport = user?.role === 'HR_ADMIN' || user?.role === 'SUPER_ADMIN';
   const { showToast } = useToast();
-
-  const [employees, setEmployees] = useState([]);
-  const [employeeFilter, setEmployeeFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
 
-  const [records, setRecords] = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [status, setStatus] = useState('loading');
+  const list = useListParams({ pageSize: 10, sort: '-date', filters: { employee: '', status: '', from: '', to: '' } });
+  const records = useApiQuery((signal) => attendanceApi.list(list.params, { signal }), [JSON.stringify(list.params)]);
+  const employees = useApiQuery((signal) => employeeApi.options({ signal }), []);
 
   const handleExport = async () => {
     setExporting(true);
     try {
       await exportApi.attendance({
-        employee: employeeFilter || undefined,
-        status: statusFilter || undefined,
-        from: from || undefined,
-        to: to || undefined,
+        employee: list.filters.employee || undefined,
+        status: list.filters.status || undefined,
+        from: list.filters.from || undefined,
+        to: list.filters.to || undefined,
       });
-    } catch {
-      showToast('Failed to export attendance', 'error');
+      showToast('Attendance export downloaded');
+    } catch (err) {
+      showToast(getApiErrorMessage(err, 'Unable to export attendance.'), 'error');
     } finally {
       setExporting(false);
     }
   };
 
-  useEffect(() => {
-    employeeApi.list({ limit: 200 }).then(({ data }) => setEmployees(data.data));
-  }, []);
+  const setToday = () => {
+    const today = todayInputValue();
+    list.setFilters({ from: today, to: today });
+  };
 
-  const fetchRecords = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const { data } = await attendanceApi.list({
-        page,
-        limit: 10,
-        employee: employeeFilter || undefined,
-        status: statusFilter || undefined,
-        from: from || undefined,
-        to: to || undefined,
-      });
-      setRecords(data.data);
-      setPagination(data.pagination);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [page, employeeFilter, statusFilter, from, to]);
-
-  useEffect(() => {
-    fetchRecords();
-  }, [fetchRecords]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [employeeFilter, statusFilter, from, to]);
+  const columns = [
+    {
+      key: 'employee',
+      header: 'Employee',
+      primary: true,
+      render: (rec) => (
+        <Link to={`/employees/${rec.employee?._id}`} className="flex items-center gap-3 hover:underline">
+          <Avatar src={rec.employee?.profileImageUrl} name={fullName(rec.employee)} size={30} />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-slate-900 dark:text-white">{fullName(rec.employee) || 'Unknown'}</p>
+            <p className="truncate font-mono text-xs text-slate-500 dark:text-slate-400">{rec.employee?.employeeId}</p>
+          </div>
+        </Link>
+      ),
+    },
+    { key: 'date', header: 'Date', sortKey: 'date', defaultDesc: true, render: (rec) => formatDate(rec.date, { weekday: 'short' }), className: 'text-slate-600 tabular dark:text-slate-300' },
+    { key: 'checkIn', header: 'Check in', render: (rec) => formatTime(rec.checkIn), className: 'text-slate-600 tabular dark:text-slate-300' },
+    { key: 'checkOut', header: 'Check out', render: (rec) => formatTime(rec.checkOut), className: 'text-slate-600 tabular dark:text-slate-300' },
+    { key: 'workingHours', header: 'Hours', sortKey: 'workingHours', align: 'right', render: (rec) => formatHours(rec.workingHours), className: 'text-slate-600 dark:text-slate-300' },
+    { key: 'status', header: 'Status', sortKey: 'status', render: (rec) => <StatusBadge status={rec.status} /> },
+  ];
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-white">Team Attendance</h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
-        View and filter attendance records for your team.
-      </p>
+      <PageHeader
+        title="Team Attendance"
+        description={user?.role === 'MANAGER' ? 'Attendance records for your direct reports.' : 'Attendance records across the organization.'}
+        actions={
+          canExport && (
+            <Button variant="secondary" icon={Download} onClick={handleExport} loading={exporting}>
+              Export
+            </Button>
+          )
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-3">
-          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className={inputClass}>
-            <option value="">All employees</option>
-            {employees.map((e) => (
-              <option key={e._id} value={e._id}>{e.firstName} {e.lastName} ({e.employeeId})</option>
-            ))}
-          </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={inputClass}>
-            <option value="">All statuses</option>
-            <option value="Present">Present</option>
-            <option value="HalfDay">Half Day</option>
-            <option value="Absent">Absent</option>
-            <option value="Leave">Leave</option>
-          </select>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputClass} />
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputClass} />
-        </div>
-        {canExport && (
-          <Button variant="secondary" onClick={handleExport} disabled={exporting}>
-            <Download size={16} /> {exporting ? 'Exporting…' : 'Export'}
-          </Button>
-        )}
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        {status === 'loading' && <Loading label="Loading attendance…" />}
-        {status === 'error' && <ErrorState message="Failed to load attendance records." />}
-        {status === 'ready' && records.length === 0 && (
-          <EmptyState title="No attendance records found" message="Try adjusting the filters above." />
-        )}
-        {status === 'ready' && records.length > 0 && (
+      <Toolbar
+        actions={
           <>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Check In</th>
-                  <th className="px-4 py-3 font-medium">Check Out</th>
-                  <th className="px-4 py-3 font-medium">Hours</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {records.map((rec) => (
-                  <tr key={rec._id} className="text-slate-700 dark:text-slate-200">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Avatar src={rec.employee?.profileImageUrl} name={`${rec.employee?.firstName} ${rec.employee?.lastName}`} size={28} />
-                        <span>{rec.employee?.firstName} {rec.employee?.lastName}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatDate(rec.date)}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatTime(rec.checkIn)}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatTime(rec.checkOut)}</td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{rec.workingHours || '—'}</td>
-                    <td className="px-4 py-3"><StatusBadge status={rec.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table></div>
-            <Pagination pagination={pagination} onPageChange={setPage} />
+            <Button variant="secondary" size="sm" onClick={setToday}>
+              Today
+            </Button>
+            {list.hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={list.resetFilters}>
+                Clear filters
+              </Button>
+            )}
           </>
+        }
+      >
+        <Select value={list.filters.employee} onChange={(e) => list.setFilter('employee', e.target.value)} aria-label="Filter by employee" className="w-full sm:w-56">
+          <option value="">All employees</option>
+          {(employees.data || []).map((e) => (
+            <option key={e._id} value={e._id}>
+              {fullName(e)} ({e.employeeId})
+            </option>
+          ))}
+        </Select>
+        <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-40">
+          <option value="">All statuses</option>
+          <option value="Present">Present</option>
+          <option value="HalfDay">Half day</option>
+          <option value="Leave">On leave</option>
+          <option value="Absent">Absent</option>
+        </Select>
+        <Input type="date" value={list.filters.from} max={list.filters.to || undefined} onChange={(e) => list.setFilter('from', e.target.value)} aria-label="From date" className="w-full sm:w-40" />
+        <Input type="date" value={list.filters.to} min={list.filters.from || undefined} onChange={(e) => list.setFilter('to', e.target.value)} aria-label="To date" className="w-full sm:w-40" />
+      </Toolbar>
+
+      <Card>
+        {records.status === 'ready' && records.data?.length === 0 && list.hasActiveFilters ? (
+          <NoResults onClear={list.resetFilters} />
+        ) : (
+          <DataTable
+            caption="Team attendance"
+            columns={columns}
+            rows={records.data || []}
+            status={records.status}
+            isFetching={records.isFetching}
+            error={records.error}
+            onRetry={records.refetch}
+            sort={list.sort}
+            onSort={list.setSort}
+            pagination={records.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
+            emptyIcon={Users2}
+            emptyTitle="No attendance records yet"
+            emptyMessage="Records appear here as your team checks in."
+          />
         )}
-      </div>
+      </Card>
     </div>
   );
 }

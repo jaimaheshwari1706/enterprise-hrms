@@ -19,4 +19,7 @@ const approvalSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+approvalSchema.index({ requestType: 1, requestId: 1 });
+approvalSchema.index({ approver: 1, status: 1 });
+
 module.exports = mongoose.model('Approval', approvalSchema);

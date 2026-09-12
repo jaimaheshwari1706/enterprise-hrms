@@ -12,6 +12,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const env = require('../config/env');
 const { hashPassword } = require('../utils/password');
+const { startOfDay: businessDay, addDays } = require('../utils/dateHelpers');
 const {
   User,
   Employee,
@@ -31,10 +32,11 @@ const {
 
 const DEMO_PASSWORD = 'Demo@1234';
 
+// Day keys must match what the API writes (UTC midnight of the business
+// calendar day, see utils/dateHelpers) or the dashboard's "today" queries
+// won't find the seeded rows on a machine whose local zone differs.
 function startOfDay(date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  return businessDay(date);
 }
 
 function randomInt(min, max) {
@@ -46,8 +48,17 @@ function pick(arr) {
 }
 
 async function run() {
+  // Guard rail: this script wipes every collection. It must never run
+  // against a production database by accident (e.g. via a mis-set
+  // MONGO_URI on a laptop). Opt in explicitly if you really mean it.
+  if (env.isProduction && process.env.SEED_ALLOW_DESTRUCTIVE !== 'true') {
+    console.error('[seed] Refusing to run the destructive demo seed with NODE_ENV=production.');
+    console.error('[seed] Set SEED_ALLOW_DESTRUCTIVE=true to override (this deletes ALL data).');
+    process.exit(1);
+  }
+
   await mongoose.connect(env.mongoUri);
-  console.log('[seed] Connected to MongoDB. Clearing existing demo collections...');
+  console.log(`[seed] Connected to MongoDB (${mongoose.connection.name}). Clearing existing demo collections...`);
 
   await Promise.all([
     User.deleteMany({}),
@@ -288,22 +299,18 @@ async function run() {
   let attendanceCount = 0;
   for (const employee of employees) {
     for (let i = 13; i >= 0; i--) {
-      const day = startOfDay(new Date());
-      day.setDate(day.getDate() - i);
-      if (day.getDay() === 0 || day.getDay() === 6) continue; // skip weekends
+      const day = addDays(startOfDay(new Date()), -i);
+      if (day.getUTCDay() === 0 || day.getUTCDay() === 6) continue; // skip weekends
 
       const roll = Math.random();
       if (roll < 0.05) continue; // ~5% unmarked (shows as absent in reports)
 
-      const checkInHour = randomInt(9, 10);
-      const checkInMinute = randomInt(0, 59);
-      const checkIn = new Date(day);
-      checkIn.setHours(checkInHour, checkInMinute);
+      // Check-in around 09:00–10:59 IST on that calendar day (IST = UTC+5:30).
+      const checkIn = new Date(day.getTime() + ((randomInt(9, 10) - 5) * 60 - 30 + randomInt(0, 59)) * 60 * 1000);
 
       const isHalfDay = roll < 0.12;
       const hoursWorked = isHalfDay ? randomInt(3, 5) : randomInt(8, 9);
-      const checkOut = new Date(checkIn);
-      checkOut.setHours(checkOut.getHours() + hoursWorked);
+      const checkOut = new Date(checkIn.getTime() + hoursWorked * 60 * 60 * 1000);
 
       await Attendance.create({
         employee: employee._id,
@@ -325,11 +332,9 @@ async function run() {
   let leaveCount = 0;
   for (const employee of regularEmployees.slice(0, 8)) {
     const leaveType = pick(leaveTypes);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() + randomInt(-20, 10));
+    const startDate = addDays(startOfDay(new Date()), randomInt(-20, 10));
     const days = randomInt(1, 3);
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + days - 1);
+    const endDate = addDays(startDate, days - 1);
 
     const status = pick(['Pending', 'Approved', 'Approved', 'Rejected']);
     const approverEmployee = employee.manager ? employees.find((e) => e._id.equals(employee.manager)) : hrAdmin;

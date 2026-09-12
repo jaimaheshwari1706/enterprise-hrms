@@ -1,7 +1,7 @@
 import api from './axiosInstance';
 
 export const organizationApi = {
-  get: () => api.get('/organization'),
+  get: (config) => api.get('/organization', config),
   update: (payload) => api.put('/organization', payload),
   uploadLogo: (file) => {
     const formData = new FormData();

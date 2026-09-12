@@ -1,5 +1,7 @@
 const { Organization } = require('../models');
 const { uploadBufferToCloudinary } = require('../middleware/upload');
+const { startOfDay } = require('../utils/dateHelpers');
+const { invalidateWorkingCalendar } = require('../services/calendarService');
 const getRedisClient = require('../config/redis');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok } = require('../utils/apiResponse');
@@ -19,6 +21,16 @@ async function getOrCreateOrganization() {
   return org;
 }
 
+// Every cache that depends on the organization: the response cache, the
+// working calendar used by leave/attendance/payroll, and the HR dashboard
+// (its "absent today" figure depends on whether today is a working day).
+async function invalidateOrganizationCaches() {
+  invalidateWorkingCalendar();
+  const cache = getRedisClient();
+  await cache.del(ORG_CACHE_KEY);
+  await cache.del('dashboard:hr');
+}
+
 // GET /api/organization
 const getOrganization = asyncHandler(async (req, res) => {
   const cache = getRedisClient();
@@ -28,7 +40,7 @@ const getOrganization = asyncHandler(async (req, res) => {
   }
 
   const org = await getOrCreateOrganization();
-  await cache.set(ORG_CACHE_KEY, org, ORG_CACHE_TTL_SECONDS);
+  await cache.set(ORG_CACHE_KEY, org.toObject(), ORG_CACHE_TTL_SECONDS);
   return ok(res, { message: 'Organization details', data: org });
 });
 
@@ -37,7 +49,18 @@ const getOrganization = asyncHandler(async (req, res) => {
 // stays a simple JSON request that Zod can validate cleanly.
 const updateOrganization = asyncHandler(async (req, res) => {
   const org = await getOrCreateOrganization();
-  Object.assign(org, req.body);
+  const { holidays, payrollPolicy, ...rest } = req.body;
+  Object.assign(org, rest);
+  if (holidays) {
+    // Store holidays as day keys (UTC midnight), sorted, so they compare
+    // with attendance/leave dates by equality.
+    org.holidays = holidays
+      .map((h) => ({ date: startOfDay(`${h.date}T00:00:00Z`, 'UTC'), name: h.name }))
+      .sort((a, b) => a.date - b.date);
+  }
+  if (payrollPolicy) {
+    org.payrollPolicy = { ...org.payrollPolicy?.toObject?.(), ...payrollPolicy };
+  }
   await org.save();
 
   await logAction({
@@ -49,7 +72,7 @@ const updateOrganization = asyncHandler(async (req, res) => {
     ip: req.ip,
   });
 
-  await getRedisClient().del(ORG_CACHE_KEY);
+  await invalidateOrganizationCaches();
   return ok(res, { message: 'Organization updated successfully', data: org });
 });
 
@@ -74,7 +97,7 @@ const uploadLogo = asyncHandler(async (req, res) => {
     ip: req.ip,
   });
 
-  await getRedisClient().del(ORG_CACHE_KEY);
+  await invalidateOrganizationCaches();
   return ok(res, { message: 'Logo uploaded successfully', data: org });
 });
 
