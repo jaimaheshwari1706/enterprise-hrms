@@ -39,7 +39,7 @@ export default function AuditLogsPage() {
           <Avatar name={log.user?.email || 'System'} size={26} />
           <div className="min-w-0">
             <p className="truncate text-slate-800 dark:text-slate-100">{log.user?.email || 'System'}</p>
-            {log.user?.role && <p className="text-[11px] text-slate-400">{roleLabel(log.user.role)}</p>}
+            {log.user?.role && <p className="text-[11px] text-slate-500 dark:text-slate-400">{roleLabel(log.user.role)}</p>}
           </div>
         </div>
       ),
@@ -47,7 +47,7 @@ export default function AuditLogsPage() {
     { key: 'action', header: 'Action', sortKey: 'action', render: (log) => <Badge tone={actionTone(log.action)}>{log.action.replace(/_/g, ' ')}</Badge> },
     { key: 'entityType', header: 'Entity', sortKey: 'entityType', render: (log) => log.entityType, className: 'text-slate-600 dark:text-slate-300', hideOnMobile: true },
     { key: 'description', header: 'Description', primary: true, render: (log) => <span className="text-slate-700 dark:text-slate-200">{log.description || '—'}</span> },
-    { key: 'ipAddress', header: 'IP', render: (log) => <span className="font-mono text-xs text-slate-400">{log.ipAddress || '—'}</span>, hideOnMobile: true },
+    { key: 'ipAddress', header: 'IP', render: (log) => <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{log.ipAddress || '—'}</span>, hideOnMobile: true },
   ];
 
   return (

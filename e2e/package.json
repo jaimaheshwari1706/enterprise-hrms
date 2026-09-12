@@ -1,0 +1,13 @@
+{
+  "name": "enterprise-hrms-e2e",
+  "private": true,
+  "description": "Headless end-to-end smoke test: boots the API on an in-memory MongoDB with the demo seed, serves the built client, and drives every role through the core HRMS workflows with Playwright. Run from the repo root with `npm run e2e` after `npm install --prefix e2e` and `npx playwright install chromium --prefix e2e`.",
+  "type": "module",
+  "scripts": {
+    "test": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "axe-core": "^4.13.0",
+    "playwright": "^1.58.0"
+  }
+}

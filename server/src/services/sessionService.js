@@ -6,6 +6,7 @@ const { RefreshToken, User } = require('../models');
 const { generateAccessToken, generateRefreshToken, getTokenExpiry, hashToken } = require('../utils/tokens');
 const { REFRESH_COOKIE_NAME, refreshCookieOptions } = require('../utils/cookies');
 const logger = require('../utils/logger');
+const env = require('../config/env');
 
 const USER_AGENT_MAX = 200;
 
@@ -47,6 +48,10 @@ function clearSessionCookie(res) {
 
 // Atomically consumes a refresh token for rotation. Returns:
 //   { status: 'ok', stored }       the token was live and is now revoked
+//   { status: 'retry', stored }    it was rotated moments ago and the family
+//                                  is still live → the client most likely
+//                                  never received the new cookie; the live
+//                                  token is revoked and a fresh one issued
 //   { status: 'reuse', stored }    it had already been rotated/revoked → theft signal
 //   { status: 'expired' }          it exists but has expired
 //   { status: 'unknown' }          never issued (or already purged)
@@ -61,6 +66,19 @@ async function consumeRefreshToken(tokenHash, userId) {
   const existing = await RefreshToken.findOne({ tokenHash, user: userId }).lean();
   if (!existing) return { status: 'unknown' };
   if (existing.expiresAt <= now && !existing.revokedAt) return { status: 'expired' };
+
+  // Grace window for a lost rotation response (see env.auth). Only the
+  // *immediately previous* token qualifies, only shortly after rotation,
+  // and only while its replacement is still the family's live token — an
+  // attacker replaying it later, or after the family moved on, is refused.
+  const graceMs = (env.auth.refreshReuseGraceSeconds || 0) * 1000;
+  if (graceMs > 0 && existing.revokedReason === 'rotated' && existing.revokedAt && now - existing.revokedAt <= graceMs && existing.replacedByHash) {
+    const live = await RefreshToken.findOneAndUpdate(
+      { tokenHash: existing.replacedByHash, family: existing.family, revokedAt: null, expiresAt: { $gt: now } },
+      { revokedAt: now, revokedReason: 'rotated' }
+    );
+    if (live) return { status: 'retry', stored: live };
+  }
   return { status: 'reuse', stored: existing };
 }
 

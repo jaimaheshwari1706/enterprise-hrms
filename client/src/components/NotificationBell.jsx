@@ -133,7 +133,7 @@ export default function NotificationBell() {
           </div>
           <div className="max-h-[60vh] overflow-y-auto">
             {!loaded ? (
-              <p className="p-6 text-center text-sm text-slate-400">Loading…</p>
+              <p className="p-6 text-center text-sm text-slate-500 dark:text-slate-400">Loading…</p>
             ) : items.length === 0 ? (
               <div className="flex flex-col items-center gap-2 p-8 text-center">
                 <Bell size={22} className="text-slate-300 dark:text-slate-600" aria-hidden="true" />
@@ -163,7 +163,7 @@ export default function NotificationBell() {
                             {!item.isRead && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary-500" aria-label="Unread" />}
                           </div>
                           <p className="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{item.message}</p>
-                          <p className="mt-1 text-[11px] text-slate-400">{timeAgo(item.createdAt)}</p>
+                          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{timeAgo(item.createdAt)}</p>
                         </div>
                       </Link>
                     </li>

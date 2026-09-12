@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Settings2, Download, Wallet, ArrowRight, AlertCircle, ListChecks, BadgeIndianRupee, FileText } from 'lucide-react';
 import { payrollApi } from '../../api/payrollApi';
-import { employeeApi } from '../../api/employeeApi';
 import { exportApi } from '../../api/exportApi';
 import { useToast } from '../../hooks/useToast';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useListParams } from '../../hooks/useListParams';
+import useDebounce from '../../hooks/useDebounce';
 import {
-  Button, IconButton, Card, PageHeader, DataTable, StatusBadge, Avatar, Input, Select, Toolbar, Tabs, ConfirmDialog, Badge, NoResults, Alert,
+  Button, IconButton, Card, PageHeader, DataTable, StatusBadge, Avatar, Input, Select, Toolbar, Tabs, ConfirmDialog, Badge, NoResults, Alert, EmployeePicker,
 } from '../../components/ui';
 import { formatCurrency, formatMonth, fullName } from '../../utils/format';
 import { getApiErrorMessage } from '../../utils/apiError';
@@ -19,7 +19,6 @@ const STATUS_FLOW = { Draft: 'Processed', Processed: 'Paid' };
 
 export default function PayrollManagementPage() {
   const [tab, setTab] = useState('records');
-  const employees = useApiQuery((signal) => employeeApi.options({ signal }), []);
 
   return (
     <div>
@@ -33,12 +32,12 @@ export default function PayrollManagementPage() {
         onChange={setTab}
         className="mb-5"
       />
-      {tab === 'records' ? <PayrollRecordsTab employees={employees.data || []} /> : <SalaryConfigTab />}
+      {tab === 'records' ? <PayrollRecordsTab /> : <SalaryConfigTab />}
     </div>
   );
 }
 
-function PayrollRecordsTab({ employees }) {
+function PayrollRecordsTab() {
   const { showToast } = useToast();
   const list = useListParams({ pageSize: 10, sort: '-month', filters: { month: '', status: '', employee: '' } });
   const records = useApiQuery((signal) => payrollApi.list(list.params, { signal }), [JSON.stringify(list.params)]);
@@ -132,7 +131,7 @@ function PayrollRecordsTab({ employees }) {
               Mark {STATUS_FLOW[rec.status]}
             </Button>
           ) : (
-            <span className="px-2 text-xs text-slate-400">Final</span>
+            <span className="px-2 text-xs text-slate-500 dark:text-slate-400">Final</span>
           )}
         </div>
       ),
@@ -174,14 +173,7 @@ function PayrollRecordsTab({ employees }) {
         }
       >
         <Input type="month" value={list.filters.month} onChange={(e) => list.setFilter('month', e.target.value)} aria-label="Filter by month" className="w-full sm:w-44" />
-        <Select value={list.filters.employee} onChange={(e) => list.setFilter('employee', e.target.value)} aria-label="Filter by employee" className="w-full sm:w-56">
-          <option value="">All employees</option>
-          {employees.map((e) => (
-            <option key={e._id} value={e._id}>
-              {fullName(e)} ({e.employeeId})
-            </option>
-          ))}
-        </Select>
+        <EmployeePicker value={list.filters.employee} onChange={(id) => list.setFilter('employee', id)} emptyLabel="All employees" aria-label="Filter by employee" className="w-full sm:w-72" />
         <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-40">
           <option value="">All statuses</option>
           <option value="Draft">Draft</option>
@@ -229,7 +221,7 @@ function PayrollRecordsTab({ employees }) {
         )}
       </Card>
 
-      <GeneratePayrollModal open={generateOpen} onClose={() => setGenerateOpen(false)} onSubmit={handleGenerate} employees={employees} submitting={generating} serverError={generateError} />
+      <GeneratePayrollModal open={generateOpen} onClose={() => setGenerateOpen(false)} onSubmit={handleGenerate} submitting={generating} serverError={generateError} />
 
       <ConfirmDialog
         open={Boolean(advanceTarget)}
@@ -253,12 +245,19 @@ function PayrollRecordsTab({ employees }) {
 
 function SalaryConfigTab() {
   const { showToast } = useToast();
-  const salaries = useApiQuery((signal) => payrollApi.listSalaries({ signal }), []);
+  // Server-side pagination + search: the structures list is one row per
+  // active employee, so it must never be downloaded whole.
+  const list = useListParams({ pageSize: 25, filters: { search: '', missing: '' } });
+  const debouncedSearch = useDebounce(list.filters.search, 300);
+  const params = { page: list.page, limit: list.limit, search: debouncedSearch || undefined, missing: list.filters.missing || undefined };
+  const salaries = useApiQuery((signal) => payrollApi.listSalaries(params, { signal }), [JSON.stringify(params)]);
   const [modalTarget, setModalTarget] = useState(null); // { employee, salary }
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
-  const [search, setSearch] = useState('');
-  const [onlyMissing, setOnlyMissing] = useState(false);
+  const search = list.filters.search;
+  const onlyMissing = list.filters.missing === 'true';
+  const setSearch = (value) => list.setFilter('search', value);
+  const setOnlyMissing = (on) => list.setFilter('missing', on ? 'true' : '');
 
   const handleSubmit = async (values) => {
     setSubmitting(true);
@@ -275,13 +274,8 @@ function SalaryConfigTab() {
     }
   };
 
-  const rows = (salaries.data || []).filter((row) => {
-    if (onlyMissing && row.salary) return false;
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return fullName(row.employee).toLowerCase().includes(q) || row.employee.employeeId.toLowerCase().includes(q);
-  });
-  const missing = (salaries.data || []).filter((r) => !r.salary).length;
+  const rows = salaries.data || [];
+  const missing = salaries.meta?.missing || 0;
 
   const columns = [
     {
@@ -349,6 +343,9 @@ function SalaryConfigTab() {
             isFetching={salaries.isFetching}
             error={salaries.error}
             onRetry={salaries.refetch}
+            pagination={salaries.pagination}
+            onPageChange={list.setPage}
+            onPageSizeChange={list.setPageSize}
             emptyIcon={AlertCircle}
             emptyTitle="No active employees"
             emptyMessage="Add employees first to configure their salaries."

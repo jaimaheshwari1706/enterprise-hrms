@@ -38,8 +38,11 @@ const employeeSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Text index powers the Module 15 global search (name / employeeId / email).
-employeeSchema.index({ firstName: 'text', lastName: 'text', employeeId: 'text', email: 'text' });
+// Search (list filter, quick search, global search) uses escaped
+// case-insensitive regexes so partial matches work ("jo" → "John"); the
+// former $text index matched whole words only and is no longer queried
+// anywhere. Existing deployments should drop it manually (see
+// docs/DATABASE.md) — Mongoose never removes indexes on its own.
 
 // Query patterns: every MANAGER request scopes by `manager`; list filters
 // combine department/designation/status; the options endpoint sorts active

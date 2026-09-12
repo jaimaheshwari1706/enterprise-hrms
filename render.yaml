@@ -26,6 +26,9 @@ services:
         value: Asia/Kolkata
       - key: LOG_LEVEL
         value: info
+      # Refresh-token rotation grace window (seconds); 0 = strict reuse detection.
+      - key: AUTH_REFRESH_REUSE_GRACE_SECONDS
+        value: '30'
       # Frontend origin(s) allowed to call this API with credentials.
       - key: CLIENT_URL
         sync: false

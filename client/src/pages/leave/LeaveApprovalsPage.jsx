@@ -3,13 +3,12 @@ import { Check, X, Download, CheckSquare } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { Link, useSearchParams } from 'react-router-dom';
 import { leaveApi } from '../../api/leaveApi';
-import { employeeApi } from '../../api/employeeApi';
 import { exportApi } from '../../api/exportApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 import { useToast } from '../../hooks/useToast';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useListParams } from '../../hooks/useListParams';
-import { Button, IconButton, Card, PageHeader, DataTable, StatusBadge, Avatar, Modal, Select, Textarea, FormField, Toolbar, Tabs, NoResults, Alert } from '../../components/ui';
+import { Button, IconButton, Card, PageHeader, DataTable, StatusBadge, Avatar, Modal, Textarea, FormField, Toolbar, Tabs, NoResults, Alert, EmployeePicker } from '../../components/ui';
 import { formatDate, fullName } from '../../utils/format';
 import { getApiErrorMessage } from '../../utils/apiError';
 
@@ -29,7 +28,6 @@ export default function LeaveApprovalsPage() {
 
   const list = useListParams({ pageSize: 10, sort: '-createdAt', filters: { status: searchParams.get('status') ?? 'Pending', employee: '' } });
   const leaves = useApiQuery((signal) => leaveApi.list(list.params, { signal }), [JSON.stringify(list.params)]);
-  const employees = useApiQuery((signal) => employeeApi.options({ signal }), []);
 
   const [exporting, setExporting] = useState(false);
   const [decisionModal, setDecisionModal] = useState(null); // { leave, decision }
@@ -123,7 +121,7 @@ export default function LeaveApprovalsPage() {
       render: (leave) => (
         <div>
           <StatusBadge status={leave.status} />
-          {leave.approver && leave.status !== 'Pending' && <p className="mt-1 text-[11px] text-slate-400">by {fullName(leave.approver)}</p>}
+          {leave.approver && leave.status !== 'Pending' && <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">by {fullName(leave.approver)}</p>}
         </div>
       ),
     },
@@ -162,14 +160,7 @@ export default function LeaveApprovalsPage() {
       <Tabs tabs={STATUS_TABS} value={list.filters.status} onChange={(v) => list.setFilter('status', v)} className="mb-4" />
 
       <Toolbar>
-        <Select value={list.filters.employee} onChange={(e) => list.setFilter('employee', e.target.value)} aria-label="Filter by employee" className="w-full sm:w-64">
-          <option value="">All employees</option>
-          {(employees.data || []).map((e) => (
-            <option key={e._id} value={e._id}>
-              {fullName(e)} ({e.employeeId})
-            </option>
-          ))}
-        </Select>
+        <EmployeePicker value={list.filters.employee} onChange={(id) => list.setFilter('employee', id)} emptyLabel="All employees" aria-label="Filter by employee" className="w-full sm:w-72" />
       </Toolbar>
 
       <Card>

@@ -13,6 +13,8 @@ const mongoose = require('mongoose');
 const env = require('../config/env');
 const { hashPassword } = require('../utils/password');
 const { startOfDay: businessDay, addDays } = require('../utils/dateHelpers');
+const { computePayroll } = require('../utils/payrollCalculations');
+const { buildCalendar } = require('../utils/workingDays');
 const {
   User,
   Employee,
@@ -28,6 +30,7 @@ const {
   Notification,
   AuditLog,
   RefreshToken,
+  Counter,
 } = require('../models');
 
 const DEMO_PASSWORD = 'Demo@1234';
@@ -75,6 +78,7 @@ async function run() {
     Notification.deleteMany({}),
     AuditLog.deleteMany({}),
     RefreshToken.deleteMany({}),
+    Counter.deleteMany({}),
   ]);
 
   // ---------------------------------------------------------------------
@@ -88,8 +92,17 @@ async function run() {
     country: 'India',
     timezone: 'Asia/Kolkata',
     workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+    // A few public holidays around the current date so leave counting and
+    // the dashboard "holiday" note have something to show.
+    holidays: [
+      { date: businessDay(addDays(businessDay(new Date()), 12)), name: 'Founders Day' },
+      { date: new Date(Date.UTC(new Date().getUTCFullYear(), 0, 26)), name: 'Republic Day' },
+      { date: new Date(Date.UTC(new Date().getUTCFullYear(), 7, 15)), name: 'Independence Day' },
+      { date: new Date(Date.UTC(new Date().getUTCFullYear(), 9, 2)), name: 'Gandhi Jayanti' },
+    ],
     officeStartTime: '09:30',
     officeEndTime: '18:30',
+    payrollPolicy: { proRataBasis: 'calendar', deductUnpaidLeave: true },
   });
   console.log('[seed] Created organization:', organization.name);
 
@@ -142,6 +155,7 @@ async function run() {
     { name: 'Casual Leave', defaultDaysPerYear: 12, description: 'For short personal needs' },
     { name: 'Sick Leave', defaultDaysPerYear: 10, description: 'For illness or medical needs' },
     { name: 'Paid Leave', defaultDaysPerYear: 15, description: 'Planned time off, deducted from annual allowance' },
+    { name: 'Loss of Pay', defaultDaysPerYear: 30, description: 'Unpaid leave once other balances are used up', isPaid: false },
   ];
   const leaveTypes = [];
   for (const def of leaveTypeDefs) {
@@ -382,24 +396,39 @@ async function run() {
   }
 
   let payrollCount = 0;
+  const calendar = buildCalendar(organization);
+  const payslipSeq = {};
   for (const employee of employees) {
     const salary = await Salary.findOne({ employee: employee._id });
     for (let offset = 2; offset >= 0; offset--) {
-      const grossSalary = salary.basic + salary.hra + salary.allowances;
-      const netSalary = grossSalary - salary.deductions;
+      const month = monthString(offset);
+      // Same engine the API uses, so seeded payslips carry a period snapshot
+      // (and a mid-month joiner is pro-rated exactly as generation would).
+      const computed = computePayroll({
+        salary,
+        month,
+        joiningDate: employee.joiningDate,
+        exitDate: employee.exitDate,
+        calendar,
+        policy: organization.payrollPolicy,
+      });
+      if (!computed) continue;
+      payslipSeq[month] = (payslipSeq[month] || 0) + 1;
       await Payroll.create({
         employee: employee._id,
-        month: monthString(offset),
-        basic: salary.basic,
-        hra: salary.hra,
-        allowances: salary.allowances,
-        deductions: salary.deductions,
-        grossSalary,
-        netSalary,
+        month,
+        ...computed,
+        payslipNumber: `PS-${month.replace('-', '')}-${String(payslipSeq[month]).padStart(4, '0')}`,
         status: offset === 0 ? 'Processed' : 'Paid',
+        paidAt: offset === 0 ? null : new Date(),
       });
       payrollCount++;
     }
+  }
+  // Keep the payslip-number counters in step so a later "Generate payroll"
+  // for one of these months continues the sequence instead of colliding.
+  for (const [month, seq] of Object.entries(payslipSeq)) {
+    await Counter.updateOne({ _id: `payslip:${month}` }, { $set: { seq } }, { upsert: true });
   }
   console.log('[seed] Created', payrollCount, 'payroll records (last 3 months)');
 

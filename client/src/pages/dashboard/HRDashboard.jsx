@@ -141,7 +141,7 @@ export default function HRDashboard() {
             <table className="mt-4 w-full text-xs">
               <caption className="sr-only">Approved leave days this year by type</caption>
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
+                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   <th scope="col" className="pb-1.5 font-medium">Leave type</th>
                   <th scope="col" className="pb-1.5 text-right font-medium">Days used</th>
                   <th scope="col" className="pb-1.5 text-right font-medium">Requests</th>
@@ -150,13 +150,13 @@ export default function HRDashboard() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {charts.leaveUtilization.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="py-3 text-center text-slate-400">No leave types configured</td>
+                    <td colSpan={3} className="py-3 text-center text-slate-500 dark:text-slate-400">No leave types configured</td>
                   </tr>
                 )}
                 {charts.leaveUtilization.map((row) => (
                   <tr key={row.leaveType}>
                     <td className="py-2 text-slate-700 dark:text-slate-200">
-                      {row.leaveType} <span className="text-slate-400">· {row.allocatedPerEmployee}/yr</span>
+                      {row.leaveType} <span className="text-slate-500 dark:text-slate-400">· {row.allocatedPerEmployee}/yr</span>
                     </td>
                     <td className="py-2 text-right font-medium text-slate-800 tabular dark:text-slate-100">{row.approvedDays}</td>
                     <td className="py-2 text-right text-slate-500 tabular dark:text-slate-400">{row.approvedRequests}</td>
@@ -179,7 +179,7 @@ export default function HRDashboard() {
                     <span className="text-slate-700 dark:text-slate-200">{row.type}</span>
                     <span className="font-medium text-slate-800 tabular dark:text-slate-100">
                       {row.count}
-                      <span className="ml-1 text-slate-400">({data.activeEmployees ? Math.round((row.count / data.activeEmployees) * 100) : 0}%)</span>
+                      <span className="ml-1 text-slate-500 dark:text-slate-400">({data.activeEmployees ? Math.round((row.count / data.activeEmployees) * 100) : 0}%)</span>
                     </span>
                   </div>
                   <ProgressBar value={row.count} max={data.activeEmployees} label={row.type} />
@@ -223,7 +223,7 @@ export default function HRDashboard() {
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <Tooltip text={new Date(item.createdAt).toLocaleString()}>
-                    <span className="text-[11px] text-slate-400">{timeAgo(item.createdAt)}</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">{timeAgo(item.createdAt)}</span>
                   </Tooltip>
                   <Badge>{item.entityType}</Badge>
                 </div>
@@ -233,7 +233,7 @@ export default function HRDashboard() {
         )}
       </Card>
 
-      <p className="mt-4 text-right text-[11px] text-slate-400">
+      <p className="mt-4 text-right text-[11px] text-slate-500 dark:text-slate-400">
         Updated {timeAgo(data.generatedAt)} · <Wallet size={11} className="inline" aria-hidden="true" /> amounts in net terms
       </p>
     </div>

@@ -118,10 +118,10 @@ export default function HolidaysCard({ organization, onSaved }) {
                     return (
                       <li key={h.date} className="flex items-center gap-3 px-3 py-2 text-sm">
                         <span className="w-28 shrink-0 tabular text-slate-600 dark:text-slate-300">
-                          {formatDate(h.date)} <span className="text-xs text-slate-400">{WEEKDAY[weekday]}</span>
+                          {formatDate(h.date)} <span className="text-xs text-slate-500 dark:text-slate-400">{WEEKDAY[weekday]}</span>
                         </span>
                         <span className="min-w-0 flex-1 truncate text-slate-900 dark:text-white">{h.name}</span>
-                        {onWeekend && <span className="hidden text-xs text-slate-400 sm:inline">falls on a weekend</span>}
+                        {onWeekend && <span className="hidden text-xs text-slate-500 dark:text-slate-400 sm:inline">falls on a weekend</span>}
                         <IconButton label={`Remove ${h.name}`} icon={Trash2} tone="danger" size="sm" onClick={() => remove(h.date)} />
                       </li>
                     );

@@ -72,6 +72,12 @@ const env = {
     // Per-account brute-force protection (independent of the IP limiter).
     maxFailedLogins: Number(process.env.AUTH_MAX_FAILED_LOGINS) || 5,
     lockoutMinutes: Number(process.env.AUTH_LOCKOUT_MINUTES) || 15,
+    // Refresh-token rotation: a token that was rotated less than this many
+    // seconds ago may be presented once more without being treated as
+    // theft. Covers the real-world race where the browser never received
+    // the new cookie (reload during page load, dropped response); outside
+    // the window any reuse revokes the whole session family. 0 disables it.
+    refreshReuseGraceSeconds: process.env.AUTH_REFRESH_REUSE_GRACE_SECONDS === undefined ? 30 : Number(process.env.AUTH_REFRESH_REUSE_GRACE_SECONDS) || 0,
   },
 
   redis: {

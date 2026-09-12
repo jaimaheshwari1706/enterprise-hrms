@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { objectId, monthString, pageQuery, sortQuery } = require('./common');
+const { objectId, monthString, pageQuery, sortQuery, searchQuery } = require('./common');
 
 const PAYROLL_STATUSES = ['Draft', 'Processed', 'Paid'];
 
@@ -38,6 +38,12 @@ const listPayrollQuery = z.object({
   status: z.enum(PAYROLL_STATUSES).optional().or(z.literal('')),
 });
 
+const listSalariesQuery = z.object({
+  ...pageQuery,
+  search: searchQuery,
+  missing: z.enum(['true', 'false']).optional().or(z.literal('')),
+});
+
 const myPayrollQuery = z.object({
   ...pageQuery,
   sort: sortQuery(['month', 'netSalary']),
@@ -50,6 +56,7 @@ module.exports = {
   generatePayrollSchema,
   updatePayrollStatusSchema,
   listPayrollQuery,
+  listSalariesQuery,
   myPayrollQuery,
   employeeIdParam,
   PAYROLL_SORT_FIELDS,

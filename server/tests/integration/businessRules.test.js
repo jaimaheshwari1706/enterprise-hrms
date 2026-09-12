@@ -229,6 +229,14 @@ describe('Payroll state machine', () => {
     const without = res.body.data.find((r) => r.employee.employeeId === 'EMP0003');
     expect(withSalary.netSalary).toBe(1110.5);
     expect(without.salary).toBeNull();
+    expect(res.body.pagination).toMatchObject({ page: 1, total: 3 });
+    expect(res.body.meta.missing).toBe(2);
+
+    const missingOnly = await request(app).get('/api/payroll/salaries?missing=true&search=EMP000').set('Authorization', `Bearer ${hrToken}`);
+    expect(missingOnly.body.data.map((r) => r.employee.employeeId).sort()).toEqual(['EMP0001', 'EMP0003']);
+    const paged = await request(app).get('/api/payroll/salaries?limit=1&page=2').set('Authorization', `Bearer ${hrToken}`);
+    expect(paged.body.data).toHaveLength(1);
+    expect(paged.body.pagination.pages).toBe(3);
   });
 });
 

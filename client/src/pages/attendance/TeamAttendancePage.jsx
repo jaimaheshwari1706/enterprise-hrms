@@ -2,14 +2,13 @@ import { useState } from 'react';
 import { Download, Users2 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { employeeApi } from '../../api/employeeApi';
 import { attendanceApi } from '../../api/attendanceApi';
 import { exportApi } from '../../api/exportApi';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 import { useToast } from '../../hooks/useToast';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useListParams } from '../../hooks/useListParams';
-import { Button, Card, PageHeader, DataTable, StatusBadge, Avatar, Input, Select, Toolbar, NoResults } from '../../components/ui';
+import { Button, Card, PageHeader, DataTable, StatusBadge, Avatar, Input, Select, Toolbar, NoResults, EmployeePicker } from '../../components/ui';
 import { formatDate, formatTime, formatHours, fullName, todayInputValue } from '../../utils/format';
 import { getApiErrorMessage } from '../../utils/apiError';
 
@@ -21,7 +20,6 @@ export default function TeamAttendancePage() {
 
   const list = useListParams({ pageSize: 10, sort: '-date', filters: { employee: '', status: '', from: '', to: '' } });
   const records = useApiQuery((signal) => attendanceApi.list(list.params, { signal }), [JSON.stringify(list.params)]);
-  const employees = useApiQuery((signal) => employeeApi.options({ signal }), []);
 
   const handleExport = async () => {
     setExporting(true);
@@ -95,14 +93,7 @@ export default function TeamAttendancePage() {
           </>
         }
       >
-        <Select value={list.filters.employee} onChange={(e) => list.setFilter('employee', e.target.value)} aria-label="Filter by employee" className="w-full sm:w-56">
-          <option value="">All employees</option>
-          {(employees.data || []).map((e) => (
-            <option key={e._id} value={e._id}>
-              {fullName(e)} ({e.employeeId})
-            </option>
-          ))}
-        </Select>
+        <EmployeePicker value={list.filters.employee} onChange={(id) => list.setFilter('employee', id)} emptyLabel="All employees" aria-label="Filter by employee" className="w-full sm:w-72" />
         <Select value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)} aria-label="Filter by status" className="w-full sm:w-40">
           <option value="">All statuses</option>
           <option value="Present">Present</option>

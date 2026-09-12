@@ -66,14 +66,17 @@ export default function LoginPage() {
           <Input type="email" placeholder="you@company.com" autoComplete="email" autoFocus {...register('email')} />
         </FormField>
 
-        <FormField label="Password" required error={errors.password?.message}>
+        <FormField label="Password" required error={errors.password?.message} htmlFor="login-password">
           <div className="relative">
             <Input
+              id="login-password"
               type={showPassword ? 'text' : 'password'}
               placeholder="••••••••"
               autoComplete="current-password"
               className="pr-10"
               invalid={Boolean(errors.password)}
+              aria-required="true"
+              aria-describedby={errors.password ? 'login-password-error' : undefined}
               {...register('password')}
             />
             <button

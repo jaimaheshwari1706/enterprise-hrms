@@ -9,7 +9,7 @@ import { departmentApi } from '../../api/departmentApi';
 import { designationApi } from '../../api/designationApi';
 import { useToast } from '../../hooks/useToast';
 import { useApiQuery } from '../../hooks/useApiQuery';
-import { Button, Input, Select, FormField, Card, CardHeader, PageHeader, FormSkeleton, Alert, ErrorState } from '../../components/ui';
+import { Button, Input, Select, FormField, Card, CardHeader, PageHeader, FormSkeleton, Alert, ErrorState, EmployeePicker } from '../../components/ui';
 import { getApiErrorMessage, getApiFieldErrors } from '../../utils/apiError';
 import { fullName, todayInputValue } from '../../utils/format';
 
@@ -66,7 +66,6 @@ export default function EmployeeFormPage() {
   const selectedDepartment = watch('department');
 
   const departments = useApiQuery((signal) => departmentApi.list({ limit: 100, status: 'active', sort: 'name' }, { signal }), []);
-  const managers = useApiQuery((signal) => employeeApi.options({ signal }), []);
   const designations = useApiQuery(
     (signal) => designationApi.list({ limit: 100, department: selectedDepartment, status: 'active', sort: 'name' }, { signal }),
     [selectedDepartment],
@@ -265,17 +264,14 @@ export default function EmployeeFormPage() {
                 ))}
               </Select>
             </FormField>
-            <FormField label="Reports to" error={errors.manager?.message} hint="Their manager approves leave requests">
-              <Select {...register('manager')}>
-                <option value="">No manager (HR approves leave)</option>
-                {(managers.data || [])
-                  .filter((e) => e._id !== id)
-                  .map((e) => (
-                    <option key={e._id} value={e._id}>
-                      {fullName(e)} ({e.employeeId})
-                    </option>
-                  ))}
-              </Select>
+            <FormField label="Reports to" error={errors.manager?.message} hint="Their manager approves leave requests; leave empty and HR approves instead">
+              <EmployeePicker
+                value={watch('manager') || ''}
+                selected={isEdit ? employee.data?.manager : null}
+                exclude={id ? [id] : []}
+                emptyLabel="No manager"
+                onChange={(managerId) => setValue('manager', managerId, { shouldDirty: true, shouldValidate: true })}
+              />
             </FormField>
             {!isEdit && (
               <FormField label="Account role" required hint="Controls what they can see and do">

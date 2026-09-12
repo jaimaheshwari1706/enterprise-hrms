@@ -88,7 +88,7 @@ export default function MyLeavesPage() {
     {
       key: 'comment',
       header: 'Approver note',
-      render: (leave) => (leave.approverComment ? <span className="line-clamp-2 max-w-xs text-xs">{leave.approverComment}</span> : <span className="text-slate-400">—</span>),
+      render: (leave) => (leave.approverComment ? <span className="line-clamp-2 max-w-xs text-xs">{leave.approverComment}</span> : <span className="text-slate-500 dark:text-slate-400">—</span>),
       className: 'text-slate-600 dark:text-slate-300',
       hideOnMobile: false,
     },
@@ -155,7 +155,7 @@ export default function MyLeavesPage() {
                     <p className="text-sm text-slate-600 dark:text-slate-300">{lb.leaveType}</p>
                     <Tooltip text={`${lb.used} used · ${lb.pending} pending · ${lb.allocated} allocated`}>
                       <p className="text-lg font-semibold text-slate-900 tabular dark:text-white">
-                        {lb.remaining} <span className="text-xs font-normal text-slate-400">/ {lb.allocated}</span>
+                        {lb.remaining} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">/ {lb.allocated}</span>
                       </p>
                     </Tooltip>
                   </div>

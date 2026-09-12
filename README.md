@@ -117,41 +117,60 @@ session). Full writeup in `BUGS.md`.
 
 ## Trade-offs
 
-- **In-memory rate limiter, not Redis-backed.** `express-rate-limit`'s
-  default store is keyed per-process — correct for a single instance, but
-  behind a load balancer with multiple instances the 20-req/15-min login
-  limit is trivially bypassed. Chose simplicity for a single-instance
-  deployment over `rate-limit-redis` (which the stack could support today).
+- **Rate limiter is per-process unless Redis is enabled.** With
+  `REDIS_ENABLED=false` (the default) `express-rate-limit` counts in memory —
+  correct for a single instance, but N instances behind a load balancer each
+  give a client N × the limit. With Redis enabled the counters move to a
+  shared store (`server/src/middleware/rateLimiter.js`, no extra dependency)
+  and fail *open* if Redis is unreachable so a cache blip never takes the API
+  down; the Mongo-backed per-account lockout still applies either way.
 - **Notifications are polled (30s), not pushed via WebSockets.** Simpler to
   build and reason about; the trade-off is up to 30s of staleness, which is
   fine at this scale but wouldn't hold up as a real-time collaboration
   requirement.
-- **No automated browser E2E suite (Playwright/Cypress).** Coverage is
-  Jest/Supertest at the API layer plus a documented manual QA pass — real
-  and repeatable, but doesn't catch purely client-side rendering bugs the
-  way a browser-driven suite would (see BUG-004, caught by lint, not by any
-  test).
+- **Browser E2E runs locally, not in CI.** `npm run e2e` (see
+  [Testing](#testing)) boots the API on an in-memory MongoDB with the demo
+  seed, serves the production client build and drives every role through
+  the core flows in headless Chromium, including an axe-core WCAG 2.1 AA
+  audit of each page. It needs a Chromium download and ~2 minutes, so it is
+  a pre-release gate rather than a per-push check.
 - **Single-tenant by design** — one `Organization` document per deployment,
   not a multi-tenant SaaS. Simpler data model, at the cost of not being
   resellable as-is.
-- **No frontend code-splitting yet.** Ships as one ~934KB JS bundle. Correct
-  and fine at this scale; would need `React.lazy` + route-based splitting
-  before it'd be acceptable on slow connections at real scale.
+- **Payroll policy is a setting, not an assumption.** Pro-rating (none /
+  calendar days / working days) and unpaid-leave deduction are explicit
+  organization settings that default to the historical fixed-monthly
+  behaviour; the engine (`server/src/utils/payrollCalculations.js`) is pure
+  and unit-tested for every branch, and each payslip stores the day
+  snapshot it was computed from.
 
 ## Testing
 
 ```bash
-cd server && npm run lint && npm test    # ESLint + Jest (unit + integration)
-cd client && npm run lint && npm run build   # oxlint + production build
+cd server && npm run lint && npm test        # ESLint + Jest (unit + integration)
+cd client && npm run lint && npm test && npm run build   # oxlint + Vitest + build
+npm install --prefix e2e && npm run e2e      # headless browser smoke + axe audit (from the root)
 ```
 
-**74 backend tests, verified passing** (13 suites, ~19s):
-- **47 unit tests** (no DB): JWT tokens, password hashing, pagination math,
-  leave-day calculation, attendance-status derivation, payroll gross/net
-  calculation.
-- **27 integration tests** (Supertest + in-memory MongoDB): auth, RBAC
-  boundaries, employee CRUD, the leave apply→approve flow, payroll
-  generation.
+**Backend — 217 Jest tests** (21 suites, in-memory MongoDB): unit coverage
+for the working calendar, leave counting, the payroll engine (fixed /
+calendar / working-day pro-rata, unpaid leave, rounding, month boundaries),
+the Redis rate-limit store, tokens, validation and date helpers; integration
+coverage for auth and refresh-token sessions (rotation, reuse detection,
+grace window, sign-out-everywhere, password change/reset, expiry), RBAC and
+IDOR boundaries, mass assignment, input hardening, leave/attendance/payroll
+business rules, the payslip endpoint and role-scoped global search.
+
+**Frontend — 55 Vitest + Testing Library tests**: `DataTable` (sorting,
+states, pagination, mobile cards), `Modal` (focus trap, Escape, focus
+return), `EmployeePicker`, `useApiQuery` (cancellation, stale-response
+guard), the auth slice + axios interceptors (login, session restore, silent
+refresh, expiry) and the leave form / approvals flows.
+
+**End-to-end — 66 checks** across SUPER_ADMIN, HR_ADMIN, MANAGER and EMPLOYEE
+(cross-role denial, session restore on reload, token reuse, dark mode, a
+390 px viewport, empty/error/slow states) with zero page errors and zero
+axe violations on the audited pages.
 
 This project has also been through a full manual QA pass (auth lifecycle,
 RBAC, every CRUD module, uploads, pagination/search/filters, dashboards,
@@ -218,7 +237,8 @@ npm run dev                   # http://localhost:5173
 
 **`server/.env`** — see [`server/.env.example`](server/.env.example) for the
 full list (`MONGO_URI`, `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`,
-`APP_TIMEZONE`, `AUTH_MAX_FAILED_LOGINS`/`AUTH_LOCKOUT_MINUTES`, `LOG_LEVEL`,
+`APP_TIMEZONE`, `AUTH_MAX_FAILED_LOGINS`/`AUTH_LOCKOUT_MINUTES`,
+`AUTH_REFRESH_REUSE_GRACE_SECONDS`, `LOG_LEVEL`,
 `REDIS_ENABLED`/`REDIS_URL`, `CLOUDINARY_*`, `EMAIL_ENABLED`/`SMTP_*`,
 `CLIENT_URL`, `CORS_ORIGINS`, `NODE_ENV`). In production the server refuses to
 boot without `MONGO_URI` and two distinct JWT secrets of at least 32
@@ -325,7 +345,8 @@ Redeploy the backend after changing it — it's read once at process start.
 ### 5. Optional integrations
 
 - **Redis** — Render Key Value, or Upstash's free tier → `REDIS_URL`,
-  `REDIS_ENABLED=true`.
+  `REDIS_ENABLED=true`. Enables response caching *and* shared rate-limit
+  counters; required as soon as the API runs on more than one instance.
 - **Cloudinary** — free account → `CLOUDINARY_CLOUD_NAME`/`API_KEY`/
   `API_SECRET`.
 - **SMTP** — a Gmail App Password or any transactional-email provider →

@@ -46,8 +46,9 @@ const payrollSchema = new mongoose.Schema(
 payrollSchema.index({ employee: 1, month: 1 }, { unique: true });
 // Dashboard totals and the HR list filter by month (optionally + status).
 payrollSchema.index({ month: -1, status: 1 });
-// Payslip lookup by reference; sparse so legacy rows without one don't
-// collide on null.
-payrollSchema.index({ payslipNumber: 1 }, { unique: true, sparse: true });
+// Payslip lookup by reference. A partial index (not `sparse`) because
+// Mongoose stores the default `null` explicitly, and a sparse unique index
+// would treat every null as the same duplicate value.
+payrollSchema.index({ payslipNumber: 1 }, { unique: true, partialFilterExpression: { payslipNumber: { $type: 'string' } } });
 
 module.exports = mongoose.model('Payroll', payrollSchema);

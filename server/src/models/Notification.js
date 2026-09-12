@@ -19,5 +19,9 @@ const notificationSchema = new mongoose.Schema(
 // Feed (newest first) and unread badge count are the only two queries.
 notificationSchema.index({ user: 1, createdAt: -1 });
 notificationSchema.index({ user: 1, isRead: 1 });
+// In-app notifications are ephemeral: MongoDB purges them after 180 days so
+// the collection doesn't grow by every leave/payroll event forever. The
+// audit log (not this collection) is the permanent record.
+notificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 180 * 24 * 60 * 60 });
 
 module.exports = mongoose.model('Notification', notificationSchema);

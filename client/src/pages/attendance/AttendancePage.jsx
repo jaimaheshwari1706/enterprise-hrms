@@ -104,7 +104,7 @@ export default function AttendancePage() {
                   ) : null}
                 </div>
                 {hasCheckedIn && !hasCheckedOut && elapsed < 8 && (
-                  <p className="mt-1 text-xs text-slate-400">A full day is 8 hours; checking out earlier records a half day.</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">A full day is 8 hours; checking out earlier records a half day.</p>
                 )}
               </div>
             </div>

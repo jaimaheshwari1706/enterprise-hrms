@@ -109,7 +109,7 @@ export default function SalaryConfigModal({ open, onClose, onSubmit, salary, emp
           </div>
         </dl>
         {net < 0 && <Alert tone="warning">Deductions exceed gross salary — the net will be negative.</Alert>}
-        {salary?.effectiveFrom && <p className="text-xs text-slate-400">Current structure effective since {new Date(salary.effectiveFrom).toLocaleDateString()}</p>}
+        {salary?.effectiveFrom && <p className="text-xs text-slate-500 dark:text-slate-400">Current structure effective since {new Date(salary.effectiveFrom).toLocaleDateString()}</p>}
       </form>
     </Modal>
   );

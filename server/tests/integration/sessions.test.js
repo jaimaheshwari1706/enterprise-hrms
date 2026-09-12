@@ -17,6 +17,13 @@ afterAll(async () => {
 
 afterEach(async () => {
   await clearTestDB();
+  env.auth.refreshReuseGraceSeconds = 30;
+});
+
+// Most tests exercise strict rotation (any reuse = theft). The grace-window
+// behaviour for a lost rotation response is covered explicitly in 3a.
+beforeEach(() => {
+  env.auth.refreshReuseGraceSeconds = 0;
 });
 
 const PASSWORD = 'Admin@123';
@@ -93,6 +100,32 @@ describe('Refresh token sessions', () => {
     expect(live).toBe(0);
     const reuseRows = await RefreshToken.countDocuments({ user: user._id, revokedReason: 'reuse' });
     expect(reuseRows).toBeGreaterThanOrEqual(1);
+  });
+
+  it('3a. within the grace window a lost rotation response can be retried (the previous live token dies)', async () => {
+    env.auth.refreshReuseGraceSeconds = 30;
+    const user = await createUser();
+    const session = await login();
+    const rotated = await refresh(session.cookie); // response "lost" by the client
+    const lostCookie = cookieOf(rotated);
+
+    const retry = await refresh(session.cookie); // browser still holds the old cookie
+    expect(retry.status).toBe(200);
+    const retryCookie = cookieOf(retry);
+    expect(retryCookie).not.toBe(lostCookie);
+
+    // Exactly one live token in the family: the retried one.
+    expect(await RefreshToken.countDocuments({ user: user._id, revokedAt: null })).toBe(1);
+    expect(await RefreshToken.countDocuments({ user: user._id, tokenHash: hashToken(rawTokenOf(retryCookie)), revokedAt: null })).toBe(1);
+    expect(await RefreshToken.countDocuments({ user: user._id, tokenHash: hashToken(rawTokenOf(lostCookie)), revokedAt: { $ne: null } })).toBe(1);
+    expect((await refresh(retryCookie)).status).toBe(200);
+
+    // A third presentation of the very first cookie is no longer "the
+    // immediately previous token" → real reuse → family revoked.
+    const replay = await refresh(session.cookie);
+    expect(replay.status).toBe(401);
+    expect(replay.body.code).toBe('REFRESH_REUSE');
+    expect(await RefreshToken.countDocuments({ user: user._id, revokedAt: null })).toBe(0);
   });
 
   it('3b. reuse in one family does not touch another device\'s session', async () => {

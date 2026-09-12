@@ -8,14 +8,19 @@ import clsx from 'clsx';
 //   <FormField label="Email" required error={errors.email?.message}>
 //     <Input type="email" {...register('email')} />
 //   </FormField>
-export default function FormField({ label, required, hint, error, className = '', children, inline = false }) {
+//
+// When the control is wrapped (e.g. an input with a show/hide button), pass
+// `htmlFor` with the input's own id so the label still points at the input
+// rather than the wrapper; the input then owns aria-describedby itself
+// (ids are `${htmlFor}-hint` / `${htmlFor}-error`).
+export default function FormField({ label, required, hint, error, className = '', children, inline = false, htmlFor }) {
   const generatedId = useId();
   const child = isValidElement(children) ? children : null;
-  const id = child?.props?.id || generatedId;
+  const id = htmlFor || child?.props?.id || generatedId;
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
 
-  const control = child
+  const control = child && !htmlFor
     ? cloneElement(child, {
         id,
         invalid: Boolean(error) || child.props.invalid,

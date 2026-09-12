@@ -158,7 +158,7 @@ export default function GlobalSearch({ autoFocus = false }) {
         type="search"
         role="combobox"
         aria-expanded={showPanel}
-        aria-controls="global-search-results"
+        aria-controls={showPanel ? 'global-search-results' : undefined}
         aria-autocomplete="list"
         aria-activedescendant={showPanel && active ? `global-search-option-${active.id}` : undefined}
         autoFocus={autoFocus}
@@ -185,13 +185,13 @@ export default function GlobalSearch({ autoFocus = false }) {
           className="absolute left-0 right-0 z-50 mt-2 max-h-[70vh] origin-top animate-scale-in overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-popover dark:border-slate-700 dark:bg-slate-900"
         >
           {items.length === 0 ? (
-            <p className="p-4 text-center text-sm text-slate-400" role="status">
+            <p className="p-4 text-center text-sm text-slate-500 dark:text-slate-400" role="status">
               {searching ? 'Searching…' : 'No matches'}
             </p>
           ) : (
             groups.map((group) => (
               <div key={group.name} role="group" aria-label={group.name}>
-                <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{group.name}</p>
+                <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{group.name}</p>
                 {group.items.map((item) => {
                   renderIndex += 1;
                   const index = renderIndex;

@@ -49,9 +49,27 @@ app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 app.use(cookieParser());
 
 // Request logging: skip the health probes (Render polls them constantly)
-// so real traffic stays readable.
+// so real traffic stays readable. In production each access line is JSON
+// carrying the request id (so it joins up with error/auth log lines) and
+// the acting user id — never the token, body or query string values.
+morgan.token('id', (req) => req.id);
+morgan.token('user', (req) => req.user?._id?.toString() || '-');
+const productionFormat = (tokens, req, res) =>
+  JSON.stringify({
+    level: 'info',
+    time: new Date().toISOString(),
+    message: 'request',
+    requestId: tokens.id(req, res),
+    method: tokens.method(req, res),
+    path: req.path,
+    status: Number(tokens.status(req, res)),
+    durationMs: Number(tokens['response-time'](req, res)),
+    length: Number(tokens.res(req, res, 'content-length')) || 0,
+    userId: tokens.user(req, res),
+    ip: req.ip,
+  });
 app.use(
-  morgan(env.isProduction ? 'combined' : 'dev', {
+  morgan(env.isProduction ? productionFormat : 'dev', {
     skip: (req) => req.path === '/api/health' || req.path === '/api/ready',
   })
 );

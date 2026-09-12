@@ -195,3 +195,101 @@ The codebase is well-commented and consistent. The issues below are real gaps, n
 - [x] Structured logs in production; auth failures logged; no secrets/tokens logged
 - [x] Indexes declared for real query patterns; TTL for refresh tokens
 - [x] Tests: unit (dates/tz, regex escape, sort, password policy, payroll rounding) + integration (leave overlap/balance, payroll transitions, attendance atomicity, employee field scoping, lockout)
+
+
+---
+
+# Phase 2 — Production-quality pass (2026-09-12)
+
+Baseline at the start of this phase: server lint clean, 111/111 Jest tests, client lint clean, build OK. Everything below was implemented in this phase and verified by the counts in the "Tests" section; nothing is listed that was not run.
+
+## Health score (out of 10, not inflated)
+
+| Area | Score | Why not higher |
+|---|---|---|
+| Security | 8 | Token families + reuse detection + access-token versioning, per-account lockout, RBAC/IDOR/mass-assignment/injection covered by integration tests, axe-clean UI. No MFA, no CSP nonce policy on the client, no secret-scanning/SAST in CI, rate limiting is per-process unless Redis is turned on. |
+| Backend architecture | 8 | Clear layering, pure calculation modules, services for sessions/calendar, validation on body+query+params everywhere. Controllers are still fat (leave/payroll ~400 lines); no job queue — notifications/emails run inline after the write. |
+| Database | 7.5 | Indexes match query patterns, TTLs on ephemeral collections, partial unique index for payslip numbers, migration notes in `docs/DATABASE.md`. No transactions (Employee+User creation is compensated, not atomic); `Approval.refPath` cosmetic defect remains. |
+| Business logic | 8 | Working calendar (weekends + holidays + custom week) applied consistently to leave counting, attendance marking, dashboards and payroll; payroll engine is pure, configurable and deterministic with a stored snapshot. Attendance still has no shift/late/overtime model; leave balance is calendar-year only; no carry-forward/accrual. |
+| Frontend architecture | 8 | Design system, shared hooks, lazy routes, searchable pickers, command palette, 55 component/hook tests. State beyond auth/theme is local (fine today; a query cache will be needed as pages multiply). |
+| UI/UX | 8 | Consistent shell/tables/forms/dialogs across every page, quick actions per role, printable payslip, holiday/policy settings, informative empty/error/slow states. No bulk actions, no saved filters, no in-app help. |
+| Accessibility | 8 | 0 axe (WCAG 2.1 A/AA) violations on 11 audited views incl. mobile dark mode; labelled icon buttons, focus-trapped dialogs, keyboard combobox/tabs/menus, reduced motion honoured. Not tested with a real screen reader; charts have no data-table alternative. |
+| Performance | 7.5 | Dashboard aggregations, lean queries, server-side pagination/search for every list including salary structures, employee pickers never download the directory, charts lazy-loaded. No HTTP caching/ETags beyond defaults, no CDN for uploads, no load test. |
+| Testing | 8 | 217 backend + 55 frontend + 66 end-to-end checks with an axe audit; CI runs lint/tests/build for both packages. E2E is local-only (not in CI); no load/perf tests; no visual regression. |
+| Production readiness | 7.5 | Fail-fast env validation, structured JSON access/auth/authz logs with request ids, graceful shutdown, health/readiness probes, Redis-backed shared rate limiting, documented Atlas migration. No error-tracking integration, no backup/restore runbook, single region, manual secret rotation. |
+
+## Bugs fixed (actual, each covered by a test or the e2e run)
+
+1. **Leave charged for weekends and holidays.** `calculateLeaveDays` was calendar-inclusive; a Fri–Mon request cost 4 days and approval marked Saturday/Sunday as `Leave` in attendance. Now only working days per `Organization.workingDays` + holidays are charged/marked; weekend-only ranges are rejected (`LEAVE_NO_WORKING_DAYS`).
+2. **"Absent today" counted everyone on weekends/holidays** in the HR, manager and employee dashboards. Now 0 on non-working days with an explanatory banner; the employee's 30-day summary uses working days as the denominator.
+3. **Payroll generated a full monthly salary for employees who joined after the month ended**, and for any future month. Joiners after the month are skipped; leavers are included for their final month; future months are refused (`PAYROLL_FUTURE_MONTH`).
+4. **Refresh-token reuse went undetected** — a stolen cookie kept working after the victim's next refresh. Token families + reuse detection now revoke the whole family; a 30 s grace window (configurable) tolerates a lost rotation response (the e2e reload test showed that reload-during-load otherwise logs the user out).
+5. **Revoked sessions kept working for up to 15 minutes** (access tokens outlived password change / deactivation / logout-all). A `tokenVersion` claim is now checked on every request.
+6. **Sparse unique index on `payslipNumber` rejected the second record without a number** (Mongoose stores `null`). Replaced by a partial index; found by the full suite.
+7. **Global search popover rendered underneath page content** (the header's `backdrop-filter` stacking context). Fixed with an explicit z-index.
+8. **Login password field had no accessible label** (`FormField` cloned its id onto a wrapper `div`). `FormField` now supports `htmlFor`; found by the e2e run.
+9. **Modal re-ran its open effect on every parent render** when `onClose` was inline, bouncing focus to the opener and swallowing keystrokes typed in the dialog. Callbacks moved to refs; found by the approvals component test.
+10. **Modal focused the Close button first** instead of the first form control.
+11. **Tabs referenced non-existent panel ids** (`aria-controls`) — a critical axe violation.
+12. **Micro-labels (sidebar sections, table card labels, menu labels) failed WCAG contrast** (slate-400 on white = 2.9:1) — bumped everywhere.
+13. **Dependency advisories**: `bcrypt` 5 → 6 (removes the `node-pre-gyp`/`tar` critical chain), `uuid` overridden to 11.1.1 under `exceljs`; all three packages audit clean.
+
+## Features added (end-to-end: model → API → tests → UI)
+
+- **Organization working calendar**: holidays (per year, duplicate-safe) and a minimum-one-day working week; `GET /leaves/preview` returns the exact charge with weekend/holiday breakdown, shown live in the leave form.
+- **Leave types management** (HR): create/update, annual allocation, paid/unpaid flag; unpaid types marked in the leave form.
+- **Payroll engine with explicit policy**: `none | calendar | working` pro-rata basis and unpaid-leave deduction, configured on the Organization page; joining/exit windows; uniform component scaling with 2-dp rounding; period snapshot stored on each payroll record; sequential payslip numbers (`PS-YYYYMM-NNNN`) via an atomic counter.
+- **Employee exit date** recorded on deactivation (date picker in the confirm dialog) and used for final-month pro-rata.
+- **Payslip**: `GET /payroll/:id` (self or HR; Draft hidden from employees; 404 for anyone else), printable `PayslipPage` with organization header, employee block, pay period / payable days, earnings, deductions, net pay and a print stylesheet (Print / Save PDF — no PDF dependency). Linked from both payroll pages.
+- **Session management**: `POST /auth/logout-all`, `GET /auth/sessions`, `DELETE /auth/sessions/:id`; profile "Active sessions" card with device / IP / last-active, per-session sign-out and "Sign out everywhere"; password change keeps the current browser signed in.
+- **Redis-backed rate limiting** (shared counters, fail-open, no new dependency) when `REDIS_ENABLED=true`; per-process otherwise. Limitation documented in the README.
+- **Command palette** (`Ctrl/⌘ K`): employees, departments/designations, leave requests, payslips and pages/actions through one role-scoped `GET /search`.
+- **Role-based quick actions** on all three dashboards, plus a "non-working day" banner.
+- **Searchable `EmployeePicker`** (server-side search, keyboard accessible) replacing every unpaginated employee `<select>` (team attendance, approvals, payroll filter, generate-payroll, manager field).
+- **Paginated, searchable salary-structures endpoint** with a "missing only" filter and org-wide missing count.
+- **Observability**: JSON access log with request id + user id in production, authorization-denied and token-reuse warnings, audit entries for `LOGOUT_ALL`, `REVOKE_SESSION`, `REFRESH_TOKEN_REUSE` and leave-type changes.
+- **Testing infrastructure**: Vitest + Testing Library for the client (in CI); `e2e/` Playwright harness with in-memory MongoDB, demo seed and axe-core audit (`npm run e2e`).
+
+## Files changed (important)
+
+- Server: `src/utils/{workingDays,leaveCalculations,payrollCalculations}.js`, `src/services/{calendarService,sessionService}.js`, `src/controllers/{leave,payroll,auth,dashboard,organization,search,profile,employee}.controller.js`, `src/middleware/{auth,rbac,rateLimiter}.js`, `src/config/{redis,env}.js`, `src/models/{Organization,LeaveType,Payroll,Employee,RefreshToken,User,Notification}.js`, `src/routes/{leave,payroll,auth,search}.routes.js`, validations, `src/seed/seed.js`, `src/app.js`; tests `tests/unit/{workingDays,payrollCalculations,rateLimitStore}.test.js`, `tests/integration/{workingCalendar,sessions,search,security}.test.js`.
+- Client: `src/components/ui/{EmployeePicker,Modal,FormField,IconButton,Tabs,DataTable}.jsx`, `src/components/{GlobalSearch,QuickActions}.jsx`, `src/pages/payroll/PayslipPage.jsx`, `src/pages/organization/{HolidaysCard,LeaveTypesCard,PayrollPolicyCard}.jsx`, `src/pages/profile/SessionsCard.jsx`, `src/pages/dashboard/TodayBanner.jsx`, `src/utils/{commandPages,quickActions,userAgent}.js`, `src/api/*`, `src/index.css` (print), `vite.config.js` (Vitest), `src/test/setup.js`, 7 test files. Removed dead legacy components (`components/{Modal,Button,ConfirmDialog,Avatar,Pagination,StateViews,StatusBadge}.jsx`, `components/dashboard/StatCard.jsx`, `features/notifications/notificationsSlice.js`).
+- Repo: `e2e/` (harness + package), `docs/DATABASE.md`, `.github/workflows/ci.yml` (client tests), `README.md`, `render.yaml`, `server/.env.example`, root `package.json` scripts.
+
+## Tests
+
+```
+server:  eslint clean · Jest 21 suites, 217 tests passing (was 16 suites / 111)
+client:  oxlint clean · Vitest 7 files, 55 tests passing (was 0) · vite build OK
+e2e:     66/66 checks, 0 page errors, 0 axe (WCAG 2.1 A/AA) violations on 11 views
+         (login, dashboards ×3 incl. 390 px dark, organization, employees, employee form,
+          payslip, approvals, profile, leave dialog)
+audit:   server 0 vulnerabilities · client 0 · e2e 0
+```
+
+## Performance (measured)
+
+- Salary-structures tab: previously one unpaginated response of every active employee; now 25 rows per page with server-side search (`GET /payroll/salaries?page&limit&search&missing`).
+- Employee pickers: previously `GET /employees/options` (every active employee) on five screens at page load; now zero rows until the user types, then ≤ 8 results per query.
+- Payroll generation stays at 3 batch queries + 1 `insertMany` regardless of headcount (plus one leave query only when unpaid-leave deduction is on).
+- Global search: one round-trip for five result groups (previously employees only).
+- Production bundle unchanged in shape (first-paint dashboard chunk ~22 KB, charts lazy ~367 KB); test tooling adds nothing to the build.
+
+## Remaining risks (honest)
+
+1. **Refresh-token grace window is a deliberate trade-off**: for 30 s after a rotation the previous token is accepted once. An attacker replaying inside that window gets a session and evicts the victim's (who is signed out and must re-log in). Set `AUTH_REFRESH_REUSE_GRACE_SECONDS=0` for strict mode at the cost of "reload during page load logs you out".
+2. **Payroll policy defaults to `none`**: existing deployments keep paying fixed monthly salary to mid-month joiners until HR picks a pro-rata basis. Unpaid leave under the calendar basis is counted in working days (favours the employee) — documented, not configurable.
+3. **Attendance is still honour-system**: no shifts, late/overtime, or attendance-based deductions; "absent" is inferred, never recorded.
+4. **Rate limits are per instance unless Redis is enabled** — documented; the per-account lockout is Mongo-backed and unaffected.
+5. **Single organization, single currency, single timezone**; leave balances reset by calendar year with no carry-forward/accrual.
+6. **E2E suite runs locally only**; CI covers lint/unit/integration/build, so browser regressions are caught before release rather than on every push.
+7. **Legacy refresh tokens** (issued before `family` existed) stay valid until they expire — `docs/DATABASE.md` has the one-liner to force re-login.
+8. **No error-reporting service, no backup/restore runbook, no secret-rotation procedure.**
+
+## Recommended next phase (highest value first)
+
+1. **Attendance model v2** — shifts, late/early, overtime and an explicit "absent" record with an HR regularisation flow; the last major correctness gap and the input a real payroll needs.
+2. **Leave accrual and carry-forward** (monthly accrual, year-end caps, encashment) with balance history — the calendar-year reset is the most common HR complaint.
+3. **Run the e2e harness in CI** (Playwright container) and add a visual-regression baseline for the 11 audited views.
+4. **Error reporting and alerting** (keyed by `requestId`) plus a backup/restore runbook for Atlas.
+5. **HR bulk operations** — CSV salary import, bulk payroll status transitions, server-rendered payslip PDFs for a whole month, and department-level payroll cost reports.

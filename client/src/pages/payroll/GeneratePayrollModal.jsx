@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Button, Input, Select, FormField, Alert } from '../../components/ui';
-import { currentMonthInputValue, formatMonth, fullName } from '../../utils/format';
+import { Modal, Button, Input, FormField, Alert, EmployeePicker } from '../../components/ui';
+import { currentMonthInputValue, formatMonth } from '../../utils/format';
 
-export default function GeneratePayrollModal({ open, onClose, onSubmit, employees, submitting, serverError }) {
+export default function GeneratePayrollModal({ open, onClose, onSubmit, submitting, serverError }) {
   const [month, setMonth] = useState(currentMonthInputValue());
   const [employeeId, setEmployeeId] = useState('');
   const monthRef = useRef(null);
@@ -35,7 +35,7 @@ export default function GeneratePayrollModal({ open, onClose, onSubmit, employee
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button type="submit" form="generate-payroll-form" loading={submitting} disabled={!month}>
+          <Button type="submit" form="generate-payroll-form" loading={submitting} disabled={!month || isFuture}>
             Generate{month ? ` for ${formatMonth(month)}` : ''}
           </Button>
         </>
@@ -46,17 +46,10 @@ export default function GeneratePayrollModal({ open, onClose, onSubmit, employee
         <FormField label="Month" required>
           <Input ref={monthRef} type="month" value={month} onChange={(e) => setMonth(e.target.value)} required />
         </FormField>
-        <FormField label="Employee" hint="Leave as all to run payroll for every active employee">
-          <Select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-            <option value="">All active employees</option>
-            {employees.map((e) => (
-              <option key={e._id} value={e._id}>
-                {fullName(e)} ({e.employeeId})
-              </option>
-            ))}
-          </Select>
+        <FormField label="Employee" hint="Leave empty to run payroll for every eligible employee">
+          <EmployeePicker value={employeeId} onChange={(id) => setEmployeeId(id)} emptyLabel="All eligible employees" />
         </FormField>
-        {isFuture && <Alert tone="warning">You are generating payroll for a future month.</Alert>}
+        {isFuture && <Alert tone="warning">Payroll can only be generated for the current or a past month.</Alert>}
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Employees without a salary structure are skipped. Existing payslips for the month are never overwritten.
         </p>

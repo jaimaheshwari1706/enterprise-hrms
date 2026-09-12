@@ -7,6 +7,7 @@ const getRedisClient = require('../config/redis');
 const asyncHandler = require('../utils/asyncHandler');
 const { ok, created } = require('../utils/apiResponse');
 const { getPagination, buildPaginationMeta, getSort } = require('../utils/pagination');
+const { containsRegex } = require('../utils/regex');
 const { logAction } = require('../services/auditService');
 const { notify } = require('../services/notificationService');
 const { sendPayrollGeneratedEmail } = require('../services/emailService');
@@ -37,16 +38,37 @@ const getSalary = asyncHandler(async (req, res) => {
   return ok(res, { message: 'Salary details', data: salary });
 });
 
-// GET /api/payroll/salaries  (HR_ADMIN, SUPER_ADMIN)
-// Salary structure for every active employee in one call — powers the
-// "Salary Configuration" tab so HR can see who still has no structure.
+// GET /api/payroll/salaries?page=&limit=&search=&missing=true  (HR_ADMIN, SUPER_ADMIN)
+// Salary structure per active employee, paginated and searchable so the
+// "Salary Configuration" tab stays usable with thousands of employees.
+// `missing=true` narrows to employees with no structure yet (they would be
+// skipped by payroll generation). `meta.missing` is the org-wide count.
 const listSalaries = asyncHandler(async (req, res) => {
-  const employees = await Employee.find({ status: 'active' })
-    .select('firstName lastName employeeId profileImageUrl department designation')
-    .populate('department', 'name')
-    .populate('designation', 'name')
-    .sort({ firstName: 1, lastName: 1 })
-    .lean();
+  const { page, limit, skip } = getPagination(req.query);
+  const { search, missing } = req.query;
+
+  // Ids with a structure — one small query (one ObjectId per structure)
+  // that powers both the "missing only" filter and the org-wide count.
+  const withSalary = await Salary.find().distinct('employee');
+  const filter = { status: 'active' };
+  if (search) {
+    const regex = containsRegex(search);
+    filter.$or = [{ firstName: regex }, { lastName: regex }, { employeeId: regex }, { email: regex }];
+  }
+  if (missing === 'true') filter._id = { $nin: withSalary };
+
+  const [employees, total, missingCount] = await Promise.all([
+    Employee.find(filter)
+      .select('firstName lastName employeeId profileImageUrl department designation')
+      .populate('department', 'name')
+      .populate('designation', 'name')
+      .sort({ firstName: 1, lastName: 1, _id: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Employee.countDocuments(filter),
+    Employee.countDocuments({ status: 'active', _id: { $nin: withSalary } }),
+  ]);
   const salaries = await Salary.find({ employee: { $in: employees.map((e) => e._id) } }).lean();
   const byEmployee = new Map(salaries.map((s) => [s.employee.toString(), s]));
 
@@ -60,7 +82,7 @@ const listSalaries = asyncHandler(async (req, res) => {
     };
   });
 
-  return ok(res, { message: 'Salary structures', data });
+  return ok(res, { message: 'Salary structures', data, pagination: buildPaginationMeta(page, limit, total), meta: { missing: missingCount } });
 });
 
 // PUT /api/payroll/salary/:employeeId  (HR_ADMIN, SUPER_ADMIN)

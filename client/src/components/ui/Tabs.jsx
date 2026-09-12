@@ -3,7 +3,8 @@ import clsx from 'clsx';
 
 // Accessible tab strip: arrow keys move between tabs, Home/End jump, the
 // active tab is announced. Panels are rendered by the parent so pages keep
-// control over lazy loading per tab.
+// control over lazy loading per tab — which is why no aria-controls is set
+// (it must reference an element that exists, and the parent owns those).
 export default function Tabs({ tabs, value, onChange, className = '' }) {
   const baseId = useId();
   const refs = useRef({});
@@ -31,7 +32,6 @@ export default function Tabs({ tabs, value, onChange, className = '' }) {
             role="tab"
             type="button"
             aria-selected={active}
-            aria-controls={`${baseId}-${tab.value}-panel`}
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(tab.value)}
             onKeyDown={(e) => onKeyDown(e, index)}

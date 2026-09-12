@@ -58,7 +58,7 @@ export default function Dropdown({ trigger, items, align = 'right', className = 
             item.type === 'separator' ? (
               <div key={`sep-${index}`} role="separator" className="my-1 h-px bg-slate-100 dark:bg-slate-800" />
             ) : item.type === 'label' ? (
-              <div key={`label-${index}`} className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              <div key={`label-${index}`} className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 {item.label}
               </div>
             ) : (
@@ -80,7 +80,7 @@ export default function Dropdown({ trigger, items, align = 'right', className = 
               >
                 {item.icon && <item.icon size={15} aria-hidden="true" className="shrink-0 opacity-80" />}
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                {item.hint && <span className="text-xs text-slate-400">{item.hint}</span>}
+                {item.hint && <span className="text-xs text-slate-500 dark:text-slate-400">{item.hint}</span>}
               </button>
             )
           )}

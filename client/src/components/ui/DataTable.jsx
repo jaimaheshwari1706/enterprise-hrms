@@ -163,7 +163,7 @@ export default function DataTable({
                   .filter((c) => c !== primaryColumn && !c.isActions && !c.hideOnMobile)
                   .map((column) => (
                     <div key={column.key} className="min-w-0">
-                      <dt className="text-[11px] uppercase tracking-wide text-slate-400">{column.mobileLabel || column.header}</dt>
+                      <dt className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{column.mobileLabel || column.header}</dt>
                       <dd className="truncate text-slate-700 dark:text-slate-200">{column.render ? column.render(row) : row[column.key] ?? '—'}</dd>
                     </div>
                   ))}

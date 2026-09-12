@@ -22,7 +22,7 @@ function Field({ label, children }) {
   return (
     <div className="min-w-0">
       <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 print:text-slate-600">{label}</dt>
-      <dd className="truncate text-sm text-slate-900 dark:text-white print:text-black">{children || '—'}</dd>
+      <dd className="break-words text-sm text-slate-900 dark:text-white print:text-black">{children || '—'}</dd>
     </div>
   );
 }

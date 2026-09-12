@@ -9,6 +9,7 @@ const {
   generatePayrollSchema,
   updatePayrollStatusSchema,
   listPayrollQuery,
+  listSalariesQuery,
   myPayrollQuery,
   employeeIdParam,
 } = require('../validations/payroll.validation');
@@ -19,7 +20,7 @@ router.use(authenticate);
 router.get('/me', validate.query(myPayrollQuery), payrollController.getMyPayroll);
 
 // Salary — view is self-or-HR (checked inside controller), edit is HR only.
-router.get('/salaries', requireRole('HR_ADMIN', 'SUPER_ADMIN'), payrollController.listSalaries);
+router.get('/salaries', requireRole('HR_ADMIN', 'SUPER_ADMIN'), validate.query(listSalariesQuery), payrollController.listSalaries);
 router.get('/salary/:employeeId', validate.params(employeeIdParam), payrollController.getSalary);
 router.put(
   '/salary/:employeeId',

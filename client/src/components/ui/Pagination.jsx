@@ -71,7 +71,7 @@ export default function Pagination({ pagination, onPageChange, onPageSizeChange,
           <div className="hidden items-center gap-1 sm:flex">
             {pageWindow(page, pages).map((item, i) =>
               item === '…' ? (
-                <span key={`gap-${i}`} className="px-1 text-slate-400">
+                <span key={`gap-${i}`} className="px-1 text-slate-500 dark:text-slate-400">
                   …
                 </span>
               ) : (

@@ -137,8 +137,11 @@ const refreshTokenHandler = asyncHandler(async (req, res) => {
   // that was *already* rotated and is presented again is a theft signal:
   // the whole family is revoked (see sessionService.handleTokenReuse).
   const result = await consumeRefreshToken(tokenHash, payload.sub);
+  if (result.status === 'retry') {
+    logger.info('Refresh token retried within the rotation grace window', { userId: payload.sub, ip: req.ip, requestId: req.id });
+  }
 
-  if (result.status !== 'ok') {
+  if (result.status !== 'ok' && result.status !== 'retry') {
     clearSessionCookie(res);
     if (result.status === 'reuse') {
       await handleTokenReuse(result.stored, req);

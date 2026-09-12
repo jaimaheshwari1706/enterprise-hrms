@@ -139,7 +139,7 @@ export default function DashboardLayout() {
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Main navigation">
         {sections.map((section) => (
           <div key={section.title}>
-            <p className={clsx('mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500', collapsed && 'lg:sr-only')}>
+            <p className={clsx('mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400', collapsed && 'lg:sr-only')}>
               {section.title}
             </p>
             <ul className="space-y-0.5">
@@ -219,7 +219,10 @@ export default function DashboardLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="app-chrome flex h-16 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white/90 px-3 backdrop-blur sm:gap-4 sm:px-5 dark:border-slate-800 dark:bg-slate-900/90">
+        {/* z-30: the header's backdrop-blur creates a stacking context, so
+            without an explicit z-index the search popover would paint
+            underneath the (animated) page content below it. */}
+        <header className="app-chrome relative z-30 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white/90 px-3 backdrop-blur sm:gap-4 sm:px-5 dark:border-slate-800 dark:bg-slate-900/90">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <button
               type="button"
@@ -284,7 +287,7 @@ export default function DashboardLayout() {
         </header>
 
         {searchOpen && (
-          <div className="border-b border-slate-200 bg-white p-3 md:hidden dark:border-slate-800 dark:bg-slate-900">
+          <div className="relative z-30 border-b border-slate-200 bg-white p-3 md:hidden dark:border-slate-800 dark:bg-slate-900">
             <GlobalSearch autoFocus />
           </div>
         )}

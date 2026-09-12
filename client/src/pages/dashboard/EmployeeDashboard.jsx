@@ -102,7 +102,7 @@ export default function EmployeeDashboard() {
           value={data.attendanceSummary.present}
           icon={Clock}
           accent="emerald"
-          hint={`${data.attendanceSummary.halfDay} half day${data.attendanceSummary.halfDay === 1 ? '' : 's'} · ${data.attendanceSummary.absent} absent of ${data.attendanceSummary.workingDays} working days`}
+          hint={`${data.attendanceSummary.absent} absent of ${data.attendanceSummary.workingDays} working days`}
           to="/attendance"
         />
         <StatCard label="Avg. hours / day" value={formatHours(data.attendanceSummary.averageHours)} icon={Timer} accent="sky" hint={`${formatHours(data.attendanceSummary.totalHours)} in 30 days`} />
@@ -139,11 +139,11 @@ export default function EmployeeDashboard() {
                     <div className="mb-1.5 flex items-center justify-between text-sm">
                       <span className="text-slate-700 dark:text-slate-200">{lb.leaveType}</span>
                       <span className="font-medium text-slate-900 tabular dark:text-white">
-                        {lb.remaining} <span className="text-xs font-normal text-slate-400">/ {lb.allocated} left</span>
+                        {lb.remaining} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">/ {lb.allocated} left</span>
                       </span>
                     </div>
                     <ProgressBar value={consumed} max={lb.allocated} tone={lb.remaining === 0 ? 'danger' : consumed / lb.allocated > 0.75 ? 'warning' : 'primary'} label={`${lb.leaveType} used`} />
-                    <p className="mt-1 text-[11px] text-slate-400">
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                       {lb.used} used{lb.pending ? ` · ${lb.pending} pending` : ''}
                     </p>
                   </li>
