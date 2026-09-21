@@ -41,10 +41,16 @@ try {
   fail(`APP_TIMEZONE "${timezone}" is not a valid IANA timezone (e.g. Asia/Kolkata, UTC, America/New_York).`);
 }
 
-const corsOrigins = (process.env.CORS_ORIGINS || process.env.CLIENT_URL || 'http://localhost:5173')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+// Browser origins allowed to call the API with credentials. Normalised
+// (trim, no trailing slash, lower-case) and may contain `*` in the host for
+// Vercel preview deployments — see utils/corsOrigins. Production must list
+// every origin the frontend is served from; there is no wildcard fallback.
+const { parseAllowedOrigins } = require('../utils/corsOrigins');
+const corsOriginsRaw = process.env.CORS_ORIGINS || process.env.CLIENT_URL || 'http://localhost:5173';
+const corsOrigins = parseAllowedOrigins(corsOriginsRaw);
+if (isProduction && corsOrigins.length === 0) {
+  fail('CORS_ORIGINS (or CLIENT_URL) must list at least one valid https://origin in production.');
+}
 
 const env = {
   nodeEnv,

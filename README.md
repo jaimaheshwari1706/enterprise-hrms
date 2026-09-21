@@ -337,10 +337,15 @@ React Router take over, instead of 404ing.
 
 ### 4. Connect the two
 
-Set `CORS_ORIGINS` on Render to your Vercel URL(s), comma-separated if you
-need both the production domain and a preview deployment
-(e.g. `https://hrms.vercel.app,https://hrms-git-main-you.vercel.app`).
-Redeploy the backend after changing it — it's read once at process start.
+Set `CORS_ORIGINS` on Render to your Vercel origin(s), comma-separated. Vercel
+gives every deployment its own hostname (`<project>-<hash>-<team>.vercel.app`),
+so list the stable production domain plus a `*` entry for previews, e.g.
+`https://hrms.vercel.app,https://hrms-*-your-team.vercel.app` — the `*`
+matches one hostname label, never a dot. Values are trimmed, trailing slashes
+ignored, case-insensitive. Redeploy the backend after changing it — it's read
+once at process start. A preflight from an unlisted origin now answers
+`403 CORS_ORIGIN_DENIED` (not a 404), so a wrong value is obvious in the
+Network tab. `VITE_API_BASE_URL` on Vercel must include the `/api` prefix.
 
 ### 5. Optional integrations
 
@@ -358,7 +363,7 @@ Redeploy the backend after changing it — it's read once at process start.
 |---|---|
 | `404: NOT_FOUND` on every route on Vercel | Root Directory isn't set to `client` — Vercel has nothing to build at the repo root. |
 | `404` only on deep routes (`/dashboard`) but `/` works | `client/vercel.json`'s SPA rewrite is missing or wasn't deployed — every non-root path needs to fall back to `index.html`. |
-| Login/refresh always `401` in production, credentials are correct | `CORS_ORIGINS` on Render doesn't contain the exact Vercel origin (no trailing slash), or `NODE_ENV` isn't `production` on Render — check both before assuming a code bug. |
+| Login/refresh always `401` in production, credentials are correct | `CORS_ORIGINS` on Render doesn't contain the Vercel origin (a preflight then returns `403 CORS_ORIGIN_DENIED`), or `NODE_ENV` isn't `production` on Render — check both before assuming a code bug. |
 | CORS error in the browser console | Same as above — the request origin must be an exact string match in `CORS_ORIGINS`. |
 | Login works but a page refresh always logs you out | This was BUG-001 (see above) — already fixed; if it recurs, check the refresh-token cookie is actually being set (`Set-Cookie` in the login response) and that `secure`/`sameSite` match your protocol. |
 | `500`/crash on `/api/auth/login` specifically on Render | `trust proxy` not applied — `express-rate-limit@7` throws on Render's `X-Forwarded-For` header without it (already fixed in `server/src/config/env.js`/`app.js`; relevant if you fork and remove that line). |

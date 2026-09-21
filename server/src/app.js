@@ -11,6 +11,7 @@ const logger = require('./utils/logger');
 const requestId = require('./middleware/requestId');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { isOriginAllowed } = require('./utils/corsOrigins');
 
 const app = express();
 
@@ -23,24 +24,49 @@ app.disable('x-powered-by');
 
 app.use(requestId);
 app.use(helmet());
+
+// CORS runs before body parsing, auth, routes and the 404 handler, so a
+// browser preflight (OPTIONS) from an allowed origin is answered here with
+// 204 for *any* path and never needs a token. The allow-list comes from
+// CORS_ORIGINS / CLIENT_URL (normalised; `*` allowed only inside a host for
+// Vercel preview deployments — see utils/corsOrigins).
+//
+// When the origin is NOT allowed the `cors` package calls plain next()
+// without any headers, which would let the OPTIONS request fall through to
+// routing and surface as a confusing "Route not found: OPTIONS …" 404. The
+// small middleware after it turns that into an explicit 403 instead.
+// Non-preflight requests from unknown origins still reach the routes (the
+// browser blocks the response because no Access-Control-Allow-Origin is
+// set; curl/server-to-server traffic without an Origin header is allowed).
 app.use(
   cors({
     origin(origin, callback) {
-      // No Origin header (curl, server-to-server, same-origin) — allow.
-      if (!origin || env.corsOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      // Reject without throwing: the `cors` package would otherwise call
-      // next(err), turning every disallowed-origin probe into a logged 500.
-      // Omitting the Access-Control-Allow-Origin header already makes the
-      // browser block the response — that's the actual enforcement.
+      // No Origin header (curl, health probes, server-to-server): not a CORS
+      // request at all — let it through untouched, without CORS headers.
+      if (!origin) return callback(null, false);
+      if (isOriginAllowed(origin, env.corsOrigins)) return callback(null, true);
       logger.warn('CORS: blocked request from disallowed origin', { origin });
       return callback(null, false);
     },
-    credentials: true,
+    credentials: true, // refresh-token cookie + Authorization header
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Requested-With'],
     exposedHeaders: ['X-Request-Id', 'Content-Disposition'],
+    maxAge: 600, // browsers may cache the preflight for 10 minutes
+    optionsSuccessStatus: 204,
   })
 );
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS' && req.headers.origin && !isOriginAllowed(req.headers.origin, env.corsOrigins)) {
+    return res.status(403).json({
+      success: false,
+      code: 'CORS_ORIGIN_DENIED',
+      message: 'This origin is not allowed to call the API',
+      ...(req.id ? { requestId: req.id } : {}),
+    });
+  }
+  return next();
+});
 // The API only ever receives small JSON documents; file uploads go through
 // multer with their own 2MB cap. A tight limit keeps a hostile client from
 // forcing the process to buffer large bodies.

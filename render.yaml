@@ -29,7 +29,10 @@ services:
       # Refresh-token rotation grace window (seconds); 0 = strict reuse detection.
       - key: AUTH_REFRESH_REUSE_GRACE_SECONDS
         value: '30'
-      # Frontend origin(s) allowed to call this API with credentials.
+      # Frontend origin(s) allowed to call this API with credentials, e.g.
+      #   https://enterprise-hrms.vercel.app,https://enterprise-hrms-*-<team>.vercel.app
+      # (Vercel preview deployments get a new hostname every deploy — the
+      # "*" entry covers them; a preflight from an unlisted origin gets 403.)
       - key: CLIENT_URL
         sync: false
       - key: CORS_ORIGINS
