@@ -8,7 +8,12 @@ import { sessionExpired, setAccessToken } from '../features/auth/authSlice';
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
   withCredentials: true, // refresh token cookie is httpOnly
-  timeout: 30000,
+  // Render's free tier spins the API down when idle and takes 30-60s to
+  // wake; a 30s timeout cancelled the very first login/refresh before the
+  // server ever answered (the preflight stayed "pending"). 75s covers a
+  // cold start; interactive requests on a warm server still fail fast on
+  // real network errors.
+  timeout: 75000,
 });
 
 api.interceptors.request.use((config) => {

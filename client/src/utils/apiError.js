@@ -12,7 +12,7 @@ export function getApiErrorMessage(err, fallback = 'Something went wrong. Please
   const code = err.response?.data?.code;
 
   if (!err.response) {
-    if (err.code === 'ECONNABORTED') return 'The request timed out. Please check your connection and try again.';
+    if (err.code === 'ECONNABORTED') return 'The server is taking longer than usual to respond — it may be starting up. Please try again in a moment.';
     return 'Unable to reach the server. Please check your connection and try again.';
   }
 
