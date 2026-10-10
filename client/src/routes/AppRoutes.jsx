@@ -35,15 +35,16 @@ const LEADS = ['HR_ADMIN', 'SUPER_ADMIN', 'MANAGER'];
 export default function AppRoutes() {
   return (
     <Routes>
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={null}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
+
       <Route element={<AuthLayout />}>
-        <Route
-          path="/login"
-          element={
-            <Suspense fallback={null}>
-              <LoginPage />
-            </Suspense>
-          }
-        />
         <Route
           path="/forgot-password"
           element={

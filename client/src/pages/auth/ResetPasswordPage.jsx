@@ -3,10 +3,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { authApi } from '../../api/authApi';
 import { getApiErrorMessage } from '../../utils/apiError';
-import { Button, Input, FormField, Alert } from '../../components/ui';
 import PasswordStrength from '../../components/PasswordStrength';
 import { passwordSchema } from '../../utils/validation';
 
@@ -49,10 +48,10 @@ export default function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">Invalid link</h1>
-        <p className="mt-1 mb-6 text-sm text-slate-500 dark:text-slate-400">This password reset link is missing its token. Request a new one to continue.</p>
-        <Link to="/forgot-password" className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400">
+      <div className="text-center flex flex-col items-center">
+        <h1 className="neu-heading text-2xl">Invalid link</h1>
+        <p className="neu-subtitle">This password reset link is missing its token. Request a new one to continue.</p>
+        <Link to="/forgot-password" className="neu-button">
           Request a new reset link
         </Link>
       </div>
@@ -61,42 +60,72 @@ export default function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div>
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-          <CheckCircle2 size={22} aria-hidden="true" />
+      <div className="text-center flex flex-col items-center">
+        <div className="neu-badge mb-4">
+          <CheckCircle2 size={18} className="neu-badge-icon text-emerald-600" />
+          <span>Password updated</span>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">Password updated</h1>
-        <p className="mt-1 mb-6 text-sm text-slate-500 dark:text-slate-400">You&apos;ll be redirected to sign in shortly.</p>
-        <Link to="/login" className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400">
-          Go to sign in now
+        <h1 className="neu-heading text-2xl">Password updated</h1>
+        <p className="neu-subtitle">You&apos;ll be redirected to sign in shortly.</p>
+        <Link to="/login" className="neu-button mt-2">
+          <ArrowLeft size={16} /> Go to sign in now
         </Link>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">Set a new password</h1>
-      <p className="mt-1 mb-6 text-sm text-slate-500 dark:text-slate-400">Choose a strong password you don&apos;t use anywhere else.</p>
+    <div className="text-center flex flex-col items-center">
+      <h1 className="neu-heading text-2xl">Set a new password</h1>
+      <p className="neu-subtitle">Choose a strong password you don&apos;t use anywhere else.</p>
 
       {serverError && (
-        <Alert tone="danger" className="mb-4">
-          {serverError}
-        </Alert>
+        <div className="neu-alert danger text-left">
+          <AlertCircle size={18} className="shrink-0" />
+          <span>{serverError}</span>
+        </div>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-        <FormField label="New password" required error={errors.password?.message}>
-          <Input type="password" autoComplete="new-password" autoFocus {...register('password')} />
-        </FormField>
-        <PasswordStrength value={password} />
-        <FormField label="Confirm password" required error={errors.confirmPassword?.message}>
-          <Input type="password" autoComplete="new-password" {...register('confirmPassword')} />
-        </FormField>
+      <form onSubmit={handleSubmit(onSubmit)} className="w-full space-y-4" noValidate>
+        <div className="neu-input-group text-left">
+          <input
+            type="password"
+            placeholder="New password"
+            autoComplete="new-password"
+            autoFocus
+            className={`neu-input ${errors.password ? 'error' : ''}`}
+            {...register('password')}
+          />
+          {errors.password && (
+            <div className="neu-input-error-msg">{errors.password.message}</div>
+          )}
+        </div>
 
-        <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
-          {isSubmitting ? 'Updating…' : 'Update password'}
-        </Button>
+        <PasswordStrength value={password} />
+
+        <div className="neu-input-group text-left">
+          <input
+            type="password"
+            placeholder="Confirm password"
+            autoComplete="new-password"
+            className={`neu-input ${errors.confirmPassword ? 'error' : ''}`}
+            {...register('confirmPassword')}
+          />
+          {errors.confirmPassword && (
+            <div className="neu-input-error-msg">{errors.confirmPassword.message}</div>
+          )}
+        </div>
+
+        <button type="submit" disabled={isSubmitting} className="neu-button w-full">
+          {isSubmitting ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              <span>Updating…</span>
+            </>
+          ) : (
+            'Update password'
+          )}
+        </button>
       </form>
     </div>
   );
