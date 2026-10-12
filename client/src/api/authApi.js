@@ -2,6 +2,7 @@ import api from './axiosInstance';
 
 export const authApi = {
   login: (credentials) => api.post('/auth/login', credentials),
+  register: ({ fullName, email, password }) => api.post('/auth/register', { fullName, email, password }),
   logout: () => api.post('/auth/logout'),
   // Revokes every session for the account, including this one.
   logoutAll: () => api.post('/auth/logout-all'),

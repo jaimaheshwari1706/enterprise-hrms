@@ -18,7 +18,10 @@ const loginSchema = z.object({
 const signUpSchema = z.object({
   fullName: z.string().trim().min(2, 'Name must be at least 2 characters'),
   email: z.string().trim().email('Enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Za-z]/, 'Password must contain at least one letter')
+    .regex(/\d/, 'Password must contain at least one number'),
 });
 
 export default function LoginPage() {
@@ -87,14 +90,30 @@ export default function LoginPage() {
     }
   };
 
+  const [signUpError, setSignUpError] = useState(null);
+
   const onSignUpSubmit = async (values) => {
     setSignUpSuccessMsg(null);
-    // Simulate or submit sign-up request
-    await new Promise((r) => setTimeout(r, 600));
-    setSignUpSuccessMsg(
-      `Account request received for ${values.fullName}! In Enterprise HRMS, admin provisions employee roles. You can also sign in with demo credentials.`
-    );
-    resetSignUp();
+    setSignUpError(null);
+    try {
+      const response = await authApi.register(values);
+      const { accessToken, user } = response.data.data;
+      // Store access token and redirect (auto-login)
+      if (accessToken) {
+        // Dispatch login success to update auth state
+        const loginResult = dispatch(loginUser({ email: values.email, password: values.password }));
+        if (loginUser.fulfilled.match(loginResult)) {
+          const redirectTo = location.state?.from?.pathname || '/dashboard';
+          navigate(redirectTo, { replace: true });
+          return;
+        }
+      }
+      setSignUpSuccessMsg(`Account created for ${values.fullName}! Redirecting...`);
+      resetSignUp();
+    } catch (err) {
+      const errorMsg = getApiErrorMessage(err);
+      setSignUpError(errorMsg);
+    }
   };
 
   const handleForgotPassword = async (e) => {
@@ -342,6 +361,13 @@ export default function LoginPage() {
               <div className="neu-alert success text-left text-xs mb-4">
                 <CheckCircle2 size={18} className="shrink-0" />
                 <span>{signUpSuccessMsg}</span>
+              </div>
+            )}
+
+            {signUpError && (
+              <div className="neu-alert danger text-left text-xs mb-4">
+                <AlertCircle size={18} className="shrink-0" />
+                <span>{signUpError}</span>
               </div>
             )}
 

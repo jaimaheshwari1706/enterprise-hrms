@@ -105,6 +105,49 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
+// POST /api/auth/register
+const register = asyncHandler(async (req, res) => {
+  const { fullName, email, password } = req.body;
+
+  // Check if user already exists
+  const existing = await User.findOne({ email });
+  if (existing) {
+    throw new ApiError(409, 'An account with this email already exists');
+  }
+
+  // Hash the password and create the user
+  const passwordHash = await hashPassword(password);
+  const user = await User.create({
+    email,
+    passwordHash,
+    role: 'EMPLOYEE',
+    isActive: true,
+  });
+
+  // Optionally create an Employee profile stub linked to the user
+  // For now, we just create the auth identity
+
+  // Auto-login: issue a session for the newly created user
+  const { accessToken } = await issueSession(res, user, req);
+
+  await logAction({
+    user,
+    action: 'REGISTER',
+    entityType: 'User',
+    entityId: user._id,
+    description: `${fullName} (${email}) registered a new account`,
+    ip: req.ip,
+  });
+
+  logger.info('New user registered', { userId: user._id.toString(), email, ip: req.ip, requestId: req.id });
+
+  return ok(res, {
+    message: 'Account created successfully',
+    data: { user: serializeUser(user), accessToken },
+    statusCode: 201,
+  });
+});
+
 // POST /api/auth/refresh-token
 // Reads the refresh token from the httpOnly cookie, validates it against
 // the DB (not revoked, not expired), rotates it (old one revoked, new one
@@ -320,6 +363,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
 module.exports = {
   login,
+  register,
   refreshTokenHandler,
   logout,
   logoutAll,

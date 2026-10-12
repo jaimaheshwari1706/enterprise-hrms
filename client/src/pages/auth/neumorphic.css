@@ -436,6 +436,35 @@
     width: 100%;
   }
 
+  /* Default state: sign-in visible, sign-up hidden */
+  .neu-sign-up-container {
+    display: none;
+  }
+
+  /* When right-panel-active: sign-in hidden, sign-up visible */
+  .neu-card-container.right-panel-active .neu-sign-in-container {
+    display: none;
+  }
+
+  .neu-card-container.right-panel-active .neu-sign-up-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    animation: neuMobileFadeIn 0.35s ease;
+  }
+
+  @keyframes neuMobileFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   .neu-heading {
     font-size: 1.85rem;
   }
