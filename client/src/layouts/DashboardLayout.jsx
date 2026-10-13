@@ -124,8 +124,18 @@ export default function DashboardLayout() {
   const sidebarContent = (
     <>
       <div className={clsx('flex h-16 shrink-0 items-center gap-2.5 border-b border-slate-200 px-4 dark:border-slate-800', collapsed && 'lg:justify-center lg:px-0')}>
-        <BrandMark />
-        <span className={clsx('truncate text-[15px] font-semibold text-slate-900 dark:text-white', collapsed && 'lg:hidden')}>Enterprise HRMS</span>
+       <img src="/logo.svg" alt="HRONE" className="h-9 w-9 shrink-0" />
+<span
+  className={clsx(
+    'truncate text-[17px] font-extrabold leading-none tracking-[0.04em]',
+    collapsed && 'lg:hidden'
+  )}
+>
+  <span className="text-slate-900 dark:text-white">HR</span>
+  <span className="bg-linear-to-r from-indigo-600 via-violet-600 to-purple-500 bg-clip-text text-transparent dark:from-indigo-400 dark:via-violet-400 dark:to-cyan-300">
+    ONE
+  </span>
+</span>
         <button
           type="button"
           onClick={() => setMobileOpen(false)}
@@ -206,14 +216,16 @@ export default function DashboardLayout() {
         <div className="fixed inset-0 z-40 animate-fade-in bg-slate-900/50 backdrop-blur-[1px] lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
       )}
 
-      <aside
-        aria-label="Sidebar"
-        className={clsx(
-          'app-chrome fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900',
-          'lg:static lg:max-w-none lg:translate-x-0 lg:transition-[width] lg:duration-200',
-          mobileOpen ? 'translate-x-0 shadow-modal' : '-translate-x-full',
-          collapsed ? 'lg:w-[68px]' : 'lg:w-64'
-        )}
+     <aside
+  aria-label="Sidebar"
+  className={clsx(
+    'app-chrome fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900',
+    'lg:relative lg:z-40 lg:max-w-none lg:translate-x-0 lg:transition-[width] lg:duration-200',
+    'lg:shadow-[6px_0_28px_0_rgba(15,23,42,0.11),2px_0_8px_0_rgba(15,23,42,0.06)] dark:lg:shadow-[8px_0_32px_0_rgba(0,0,0,0.65),2px_0_8px_0_rgba(0,0,0,0.4)]',
+    mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
+    collapsed ? 'lg:w-17' : 'lg:w-64'
+  )}
+
       >
         {sidebarContent}
       </aside>
@@ -222,69 +234,78 @@ export default function DashboardLayout() {
         {/* z-30: the header's backdrop-blur creates a stacking context, so
             without an explicit z-index the search popover would paint
             underneath the (animated) page content below it. */}
-        <header className="app-chrome relative z-30 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white/90 px-3 backdrop-blur sm:gap-4 sm:px-5 dark:border-slate-800 dark:bg-slate-900/90">
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Open navigation"
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden dark:text-slate-400 dark:hover:bg-slate-800"
-            >
-              <Menu size={20} aria-hidden="true" />
-            </button>
-            <div className="hidden w-full max-w-md md:block">
-              <GlobalSearch />
-            </div>
-            <button
-              type="button"
-              onClick={() => setSearchOpen((o) => !o)}
-              aria-label="Search"
-              aria-expanded={searchOpen}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden dark:text-slate-400 dark:hover:bg-slate-800"
-            >
-              <Search size={18} aria-hidden="true" />
-            </button>
-          </div>
+        <header className="app-chrome relative z-30 flex h-16 shrink-0 items-center gap-2 px-3 sm:gap-4 sm:px-5">
+  {/* Left: menu button (mobile only), takes equal space as the right side */}
+  <div className="flex flex-1 items-center">
+    <button
+      type="button"
+      onClick={() => setMobileOpen(true)}
+      aria-label="Open navigation"
+      className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden dark:text-slate-400 dark:hover:bg-slate-800"
+    >
+      <Menu size={20} aria-hidden="true" />
+    </button>
+  </div>
 
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => dispatch(toggleTheme())}
-              aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              title={mode === 'dark' ? 'Light mode' : 'Dark mode'}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-            >
-              {mode === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
-            </button>
-            <NotificationBell />
-            <Dropdown
-              trigger={({ ref, toggle, ...aria }) => (
-                <button
-                  ref={ref}
-                  type="button"
-                  onClick={toggle}
-                  {...aria}
-                  className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  <Avatar src={user?.employee?.profileImageUrl} name={displayName} size={30} />
-                  <div className="hidden text-left lg:block">
-                    <p className="max-w-[160px] truncate text-xs font-medium leading-tight text-slate-900 dark:text-white">{displayName}</p>
-                    <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">{roleLabel(user?.role)}</p>
-                  </div>
-                  <ChevronDown size={14} className="hidden text-slate-400 lg:block" aria-hidden="true" />
-                  <span className="sr-only">Account menu</span>
-                </button>
-              )}
-              items={[
-                { type: 'label', label: user?.email },
-                { label: 'My profile', icon: UserCircle, onSelect: () => navigate('/profile') },
-                { label: 'My attendance', icon: Clock, onSelect: () => navigate('/attendance') },
-                { type: 'separator' },
-                { label: 'Sign out', icon: LogOut, tone: 'danger', onSelect: handleLogout },
-              ]}
-            />
+  {/* Center: search with its own shadow so it lifts off the page */}
+  <div
+    className="hidden shrink-0 md:block md:w-75 lg:w-95
+      [&_kbd]:hidden [&_input]:rounded-full
+      [&_input]:shadow-[0_6px_20px_-6px_rgba(15,23,42,0.28),0_1px_3px_rgba(15,23,42,0.1)]
+      dark:[&_input]:shadow-[0_6px_20px_-6px_rgba(0,0,0,0.7)]"
+  >
+    <GlobalSearch />
+  </div>
+
+  {/* Right: actions */}
+  <div className="flex flex-1 items-center justify-end gap-1 sm:gap-2">
+    <button
+      type="button"
+      onClick={() => setSearchOpen((o) => !o)}
+      aria-label="Search"
+      aria-expanded={searchOpen}
+      className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden dark:text-slate-400 dark:hover:bg-slate-800"
+    >
+      <Search size={18} aria-hidden="true" />
+    </button>
+    <button
+      type="button"
+      onClick={() => dispatch(toggleTheme())}
+      aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={mode === 'dark' ? 'Light mode' : 'Dark mode'}
+      className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+    >
+      {mode === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+    </button>
+    <NotificationBell />
+    <Dropdown
+      trigger={({ ref, toggle, ...aria }) => (
+        <button
+          ref={ref}
+          type="button"
+          onClick={toggle}
+          {...aria}
+          className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <Avatar src={user?.employee?.profileImageUrl} name={displayName} size={30} />
+          <div className="hidden text-left lg:block">
+            <p className="max-w-40 truncate text-xs font-medium leading-tight text-slate-900 dark:text-white">{displayName}</p>
+            <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">{roleLabel(user?.role)}</p>
           </div>
-        </header>
+          <ChevronDown size={14} className="hidden text-slate-400 lg:block" aria-hidden="true" />
+          <span className="sr-only">Account menu</span>
+        </button>
+      )}
+      items={[
+        { type: 'label', label: user?.email },
+        { label: 'My profile', icon: UserCircle, onSelect: () => navigate('/profile') },
+        { label: 'My attendance', icon: Clock, onSelect: () => navigate('/attendance') },
+        { type: 'separator' },
+        { label: 'Sign out', icon: LogOut, tone: 'danger', onSelect: handleLogout },
+      ]}
+    />
+  </div>
+</header>
 
         {searchOpen && (
           <div className="relative z-30 border-b border-slate-200 bg-white p-3 md:hidden dark:border-slate-800 dark:bg-slate-900">

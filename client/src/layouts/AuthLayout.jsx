@@ -9,7 +9,7 @@ export default function AuthLayout() {
       <div className="neu-window-header">
         <Link to="/login" className="neu-window-title hover:opacity-80 transition-opacity">
           <Home size={15} className="text-[#E88A7A]" />
-          <span>HRM Enterprises</span>
+          <span>HRONE</span>
         </Link>
         <Link to="/login" className="neu-button neu-button-sm">
           Back to Login
